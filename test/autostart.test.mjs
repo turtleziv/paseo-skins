@@ -98,13 +98,6 @@ test("assertMacOs rejects non-darwin platforms", () => {
 test("installAutostart writes both plists, the guardian script, and bootstraps them", async (context) => {
   const home = await mkdtemp(path.join(os.tmpdir(), "paseo-autostart-install-"));
   context.after(() => rm(home, { force: true, recursive: true }));
-  const originalHome = process.env.HOME;
-  process.env.HOME = home;
-  context.after(() => {
-    if (originalHome === undefined) delete process.env.HOME;
-    else process.env.HOME = originalHome;
-  });
-
   const calls = [];
   const fakeExecuteFile = async (file, args) => {
     calls.push([file, ...args]);
@@ -135,9 +128,11 @@ test("installAutostart writes both plists, the guardian script, and bootstraps t
   const guardianScriptSource = await readFile(guardianScript, "utf8");
   assert.match(guardianScriptSource, /"--theme"/);
   assert.match(guardianScriptSource, /"\/abs\/theme\.json"/);
-  // 脚本必须可执行
-  assert.equal((await stat(guardianScript)).mode & 0o100, 0o100);
-  assert.equal((await stat(configurationPath)).mode & 0o077, 0);
+  // Windows does not expose POSIX executable/private permission bits through stat.
+  if (process.platform !== "win32") {
+    assert.equal((await stat(guardianScript)).mode & 0o100, 0o100);
+    assert.equal((await stat(configurationPath)).mode & 0o077, 0);
+  }
   assert.deepEqual(
     await readAutostartConfiguration({ configurationPath, guardianPath: guardianScript }),
     {
@@ -192,13 +187,6 @@ test("installAutostart refuses non-macOS platforms", async () => {
 test("uninstallAutostart boots out both labels and removes generated files", async (context) => {
   const home = await mkdtemp(path.join(os.tmpdir(), "paseo-autostart-uninstall-"));
   context.after(() => rm(home, { force: true, recursive: true }));
-  const originalHome = process.env.HOME;
-  process.env.HOME = home;
-  context.after(() => {
-    if (originalHome === undefined) delete process.env.HOME;
-    else process.env.HOME = originalHome;
-  });
-
   const calls = [];
   const fakeExecuteFile = async (file, args) => {
     calls.push([file, ...args].join(" "));
@@ -218,6 +206,7 @@ test("uninstallAutostart boots out both labels and removes generated files", asy
   });
 
   const result = await uninstallAutostart({
+    homeDirectory: home,
     userId: 501,
     platform: "darwin",
     executeFileImplementation: fakeExecuteFile,

@@ -4,6 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import {
+  collectWindowsAutostartStatus,
+  installWindowsAutostart,
+  uninstallWindowsAutostart,
+} from "./windows-autostart.mjs";
 
 const executeFile = promisify(execFile);
 const AUTOSTART_CONFIGURATION_SCHEMA_VERSION = 1;
@@ -13,32 +18,32 @@ export const CDP_ENV_LABEL = "com.paseo-skins.cdp-env";
 export const GUARDIAN_LABEL = "com.paseo-skins.guardian";
 
 // 所有生成的运行时文件都放在既有的状态目录下，保持与 watcher-lock / remote-theme 一致。
-export function autostartStateRoot() {
-  return path.join(os.homedir(), ".paseo-skin-loader");
+export function autostartStateRoot(homeDirectory = os.homedir()) {
+  return path.join(homeDirectory, ".paseo-skin-loader");
 }
 
-function launchAgentsDirectory() {
-  return path.join(os.homedir(), "Library", "LaunchAgents");
+function launchAgentsDirectory(homeDirectory = os.homedir()) {
+  return path.join(homeDirectory, "Library", "LaunchAgents");
 }
 
-function cdpEnvPlistPath() {
-  return path.join(launchAgentsDirectory(), `${CDP_ENV_LABEL}.plist`);
+function cdpEnvPlistPath(homeDirectory = os.homedir()) {
+  return path.join(launchAgentsDirectory(homeDirectory), `${CDP_ENV_LABEL}.plist`);
 }
 
-function guardianPlistPath() {
-  return path.join(launchAgentsDirectory(), `${GUARDIAN_LABEL}.plist`);
+function guardianPlistPath(homeDirectory = os.homedir()) {
+  return path.join(launchAgentsDirectory(homeDirectory), `${GUARDIAN_LABEL}.plist`);
 }
 
-function guardianScriptPath() {
-  return path.join(autostartStateRoot(), "guardian.mjs");
+function guardianScriptPath(homeDirectory = os.homedir()) {
+  return path.join(autostartStateRoot(homeDirectory), "guardian.mjs");
 }
 
-function guardianLogPath() {
-  return path.join(autostartStateRoot(), "guardian.log");
+function guardianLogPath(homeDirectory = os.homedir()) {
+  return path.join(autostartStateRoot(homeDirectory), "guardian.log");
 }
 
-function autostartConfigurationPath() {
-  return path.join(autostartStateRoot(), "autostart.json");
+function autostartConfigurationPath(homeDirectory = os.homedir()) {
+  return path.join(autostartStateRoot(homeDirectory), "autostart.json");
 }
 
 function validateThemeArguments(themeArguments) {
@@ -307,18 +312,26 @@ export async function installAutostart({
   userId = typeof process.getuid === "function" ? process.getuid() : null,
   platform = process.platform,
   executeFileImplementation = executeFile,
+  stateRoot: windowsStateRoot,
+  system,
+  taskName,
+  guardianPath,
 } = {}) {
+  if (platform === "win32") {
+    return installWindowsAutostart({ remoteDebuggingPort, themeArguments, nodeExecutablePath,
+      cliPath, stateRoot: windowsStateRoot, system, taskName, guardianPath });
+  }
   assertMacOs(platform);
   if (userId === null) {
     throw new Error("autostart requires a numeric user id");
   }
 
-  const stateRoot = autostartStateRoot();
+  const stateRoot = autostartStateRoot(homeDirectory);
   await mkdir(stateRoot, { mode: 0o700, recursive: true });
-  await mkdir(launchAgentsDirectory(), { recursive: true });
+  await mkdir(launchAgentsDirectory(homeDirectory), { recursive: true });
 
-  const scriptPath = guardianScriptPath();
-  const configurationPath = autostartConfigurationPath();
+  const scriptPath = guardianScriptPath(homeDirectory);
+  const configurationPath = autostartConfigurationPath(homeDirectory);
   const configuration = validateAutostartConfiguration({
     schemaVersion: AUTOSTART_CONFIGURATION_SCHEMA_VERSION,
     cliPath,
@@ -335,15 +348,15 @@ export async function installAutostart({
   );
   await chmod(scriptPath, 0o700);
 
-  const cdpEnvPlist = cdpEnvPlistPath();
-  const guardianPlist = guardianPlistPath();
+  const cdpEnvPlist = cdpEnvPlistPath(homeDirectory);
+  const guardianPlist = guardianPlistPath(homeDirectory);
   await writeFile(cdpEnvPlist, buildCdpEnvPlist({ remoteDebuggingPort }), { mode: 0o644 });
   await writeFile(
     guardianPlist,
     buildGuardianPlist({
       nodeExecutablePath,
       scriptPath,
-      logPath: guardianLogPath(),
+      logPath: guardianLogPath(homeDirectory),
       homeDirectory,
     }),
     { mode: 0o644 },
@@ -378,7 +391,18 @@ export async function uninstallAutostart({
   userId = typeof process.getuid === "function" ? process.getuid() : null,
   platform = process.platform,
   executeFileImplementation = executeFile,
+  homeDirectory = os.homedir(),
+  stateRoot,
+  system,
+  taskName,
+  stopTimeoutMilliseconds,
+  pollIntervalMilliseconds,
+  watcherLockImplementation,
 } = {}) {
+  if (platform === "win32") {
+    return uninstallWindowsAutostart({ stateRoot, system, taskName,
+      stopTimeoutMilliseconds, pollIntervalMilliseconds, watcherLockImplementation });
+  }
   assertMacOs(platform);
   if (userId === null) {
     throw new Error("autostart requires a numeric user id");
@@ -392,10 +416,10 @@ export async function uninstallAutostart({
 
   const removed = [];
   for (const filePath of [
-    cdpEnvPlistPath(),
-    guardianPlistPath(),
-    guardianScriptPath(),
-    autostartConfigurationPath(),
+    cdpEnvPlistPath(homeDirectory),
+    guardianPlistPath(homeDirectory),
+    guardianScriptPath(homeDirectory),
+    autostartConfigurationPath(homeDirectory),
   ]) {
     await rm(filePath, { force: true });
     removed.push(filePath);
@@ -417,7 +441,13 @@ export async function collectAutostartStatus({
   userId = typeof process.getuid === "function" ? process.getuid() : null,
   platform = process.platform,
   executeFileImplementation = executeFile,
+  stateRoot,
+  system,
+  taskName,
 } = {}) {
+  if (platform === "win32") {
+    return collectWindowsAutostartStatus({ stateRoot, system, taskName });
+  }
   const supported = platform === "darwin" && userId !== null;
   if (!supported) {
     return {

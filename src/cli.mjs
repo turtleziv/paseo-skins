@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -41,7 +42,42 @@ import {
 
 export { parseArguments };
 
-async function resolveTheme(options) {
+const LOCAL_DEFAULT_CONFIGURATION_PATH = fileURLToPath(new URL("../.paseo-default-theme.json", import.meta.url));
+
+async function readLocalDefaultManifestPath(configurationPath) {
+  let contents;
+  try {
+    contents = await readFile(configurationPath, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+  const configuration = JSON.parse(contents.replace(/^\uFEFF/, ""));
+  const manifestPath = configuration?.manifestPath;
+  if (typeof manifestPath !== "string" || !path.isAbsolute(manifestPath)) {
+    throw new Error("Local default theme must contain an absolute manifestPath");
+  }
+  return manifestPath;
+}
+
+export function attachWatcherStopInput(input, stop) {
+  let pending = "";
+  const onData = (chunk) => {
+    pending += chunk.toString();
+    const lines = pending.split(/\r?\n/);
+    pending = lines.pop() ?? "";
+    if (lines.some((line) => line === "stop")) stop();
+    if (pending.length > 128) pending = "";
+  };
+  input.on("data", onData);
+  input.resume();
+  return () => {
+    input.removeListener("data", onData);
+    if (input.listenerCount("data") === 0) input.pause();
+  };
+}
+
+export async function resolveTheme(options, configurationPath = LOCAL_DEFAULT_CONFIGURATION_PATH) {
   if (options.command === "apply") {
     const catalog = await loadThemeCatalog(options.catalogUrl);
     const catalogTheme = catalog.themes.find((theme) => theme.id === options.publicThemeId);
@@ -50,7 +86,27 @@ async function resolveTheme(options) {
     }
     return loadRemoteTheme(catalogTheme.manifestUrl);
   }
-  return options.themeUrl ? loadRemoteTheme(options.themeUrl) : loadTheme(options.themeManifest);
+  if (options.themeUrl) return loadRemoteTheme(options.themeUrl);
+  const localDefault = options.themeWasExplicit
+    ? null
+    : await readLocalDefaultManifestPath(configurationPath);
+  return loadTheme(localDefault ?? options.themeManifest);
+}
+
+export async function resolveAutostartThemeArguments(
+  options,
+  configurationPath = LOCAL_DEFAULT_CONFIGURATION_PATH,
+) {
+  const explicitThemeManifest = typeof options.themeManifest === "string"
+    ? options.themeManifest
+    : null;
+  const themeManifest = options.themeWasExplicit
+    ? explicitThemeManifest
+    : await readLocalDefaultManifestPath(configurationPath);
+  return buildThemeArguments({
+    themeManifest: options.themeUrl ? null : themeManifest,
+    themeUrl: options.themeUrl,
+  });
 }
 
 async function getPaseoTargets(options) {
@@ -72,9 +128,14 @@ async function runWatcher(options, preloadedTheme = null) {
   });
   const abortController = new AbortController();
   const stop = () => abortController.abort();
+  let detachStopInput = () => {};
   try {
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
+    detachStopInput = attachWatcherStopInput(process.stdin, () => {
+      console.log("[paseo-skin] Stop requested via stdin");
+      stop();
+    });
     const watcher = new PaseoSkinWatcher({
       includeDevelopmentTargets: options.includeDevelopmentTargets,
       injectionSource: buildStageBlackGoldInjectionSource({
@@ -89,9 +150,10 @@ async function runWatcher(options, preloadedTheme = null) {
     console.log(
       `[paseo-skin] ${loadedTheme.theme.name} watcher active on 127.0.0.1:${options.remoteDebuggingPort}`,
     );
-    console.log("[paseo-skin] Ctrl+C stops watching and unregisters reload hooks; use reset to remove the current skin.");
+    console.log("[paseo-skin] Ctrl+C or 'stop' + Enter stops watching and unregisters reload hooks; use reset to remove the current skin.");
     await watcher.run(abortController.signal);
   } finally {
+    detachStopInput();
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
     await watcherLock.release();
@@ -220,7 +282,7 @@ async function configurePersistentTheme(options, loadedTheme, action) {
   } else {
     console.log(
       `[paseo-skin] Applied ${loadedTheme.theme.name} to ${result.renderers} renderer(s); ` +
-      "the autostart Guardian will restore it after the terminal closes, Paseo restarts, or macOS reboots.",
+      "the autostart Guardian will restore it after the terminal closes, Paseo restarts, or the next login.",
     );
   }
 }
@@ -507,17 +569,8 @@ async function verify(options) {
 }
 
 async function autostart(options) {
-  // 只在用户显式指定主题时透传给 inject；否则让 inject 使用自己的默认加载逻辑
-  // （与 `npm start` 一致）。默认的 themeManifest 是 URL 对象而非字符串，
-  // 直接透传会被 inject 的 path.resolve 破坏成无效路径（/file:/... ENOENT）。
-  const explicitThemeManifest =
-    typeof options.themeManifest === "string" ? options.themeManifest : null;
-  const themeArguments = buildThemeArguments({
-    themeManifest: options.themeUrl ? null : explicitThemeManifest,
-    themeUrl: options.themeUrl,
-  });
-
   if (options.autostartAction === "install") {
+    const themeArguments = await resolveAutostartThemeArguments(options);
     const result = await installAutostart({
       remoteDebuggingPort: options.remoteDebuggingPort,
       themeArguments,
@@ -526,10 +579,16 @@ async function autostart(options) {
       console.log(JSON.stringify({ pass: true, ...result }, null, 2));
       return;
     }
-    console.log("[paseo-skin] Autostart installed. The skin now restores after every Paseo restart.");
-    console.log(`[paseo-skin] CDP env agent:  ${result.cdpEnvPlist}`);
-    console.log(`[paseo-skin] Guardian agent: ${result.guardianPlist}`);
-    console.log("[paseo-skin] Quit and reopen Paseo once to confirm; new windows are themed automatically.");
+    console.log("[paseo-skin] Autostart installed. The Guardian restores the skin after Paseo restarts.");
+    if (process.platform === "win32") {
+      console.log(`[paseo-skin] Guardian task: ${result.taskName}`);
+      console.log(`[paseo-skin] Configuration: ${result.configurationPath}`);
+      console.log("[paseo-skin] If Paseo is already running without CDP, quit it normally after active work and reopen it.");
+    } else {
+      console.log(`[paseo-skin] CDP env agent:  ${result.cdpEnvPlist}`);
+      console.log(`[paseo-skin] Guardian agent: ${result.guardianPlist}`);
+      console.log("[paseo-skin] Quit and reopen Paseo once to confirm; new windows are themed automatically.");
+    }
     return;
   }
 
@@ -548,9 +607,10 @@ async function autostart(options) {
     console.log(JSON.stringify(report, null, 2));
     return;
   }
-  console.log(`Autostart supported: ${report.supported ? "yes" : "no (macOS only)"}`);
-  console.log(`CDP env agent (${report.cdpEnvLabel}): ${report.cdpEnvLoaded ? "loaded" : "not loaded"}`);
-  console.log(`Guardian agent (${report.guardianLabel}): ${report.guardianLoaded ? "loaded" : "not loaded"}`);
+  console.log(`Autostart supported: ${report.supported ? "yes" : "no"}`);
+  console.log(`CDP environment (${report.cdpEnvLabel}): ${report.cdpEnvLoaded ? "loaded" : "not loaded"}`);
+  console.log(`Guardian (${report.guardianLabel}): ${report.guardianLoaded ? "loaded" : "not loaded"}`);
+  if (report.problem) console.log(`Problem: ${report.problem}`);
 }
 
 async function main() {

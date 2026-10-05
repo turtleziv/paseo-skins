@@ -8,7 +8,7 @@ test("Paseo agent skill exposes valid discovery metadata and safety rules", asyn
     "utf8",
   );
 
-  assert.match(skill, /^---\nname: paseo-skins\ndescription: .+\n---\n/);
+  assert.match(skill.replace(/\r\n/g, "\n"), /^---\nname: paseo-skins\ndescription: .+\n---\n/);
   assert.match(skill, /Never force-quit Paseo/);
   assert.match(skill, /verify.*pass: true/s);
   assert.match(skill, /https:\/\/huangguang1999\.github\.io\/paseo-skins\/catalog\.json/);

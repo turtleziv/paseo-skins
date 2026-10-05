@@ -83,6 +83,8 @@ test("loadRemoteTheme downloads, validates, and caches a theme", async (context)
 
   assert.equal(loadedTheme.theme.id, "stage-black-gold");
   assert.equal(loadedTheme.image.mediaType, "image/png");
-  assert.match(loadedTheme.manifestPath, /stage-black-gold\/1\.0\.0\/[a-f0-9]{16}/);
+  const cacheSegments = loadedTheme.manifestPath.split(path.sep);
+  assert.deepEqual(cacheSegments.slice(-4, -2), ["stage-black-gold", "1.0.0"]);
+  assert.match(cacheSegments.at(-2), /^[a-f0-9]{16}$/);
   assert.match(loadedTheme.sourceUrl, /^http:\/\/127\.0\.0\.1:/);
 });

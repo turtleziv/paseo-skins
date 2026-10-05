@@ -114,16 +114,66 @@ async function sampleImagePalette(imageBytes, mediaType) {
   const bitmapPath = path.join(temporaryDirectory, "sample.bmp");
   try {
     await writeFile(inputPath, imageBytes, { mode: 0o600 });
-    await execFileAsync("/usr/bin/sips", [
-      "-Z",
-      "96",
-      "-s",
-      "format",
-      "bmp",
-      inputPath,
-      "--out",
-      bitmapPath,
-    ], { timeout: 20_000 });
+    if (process.platform === "win32") {
+      if (mediaType === "image/webp") {
+        throw new Error("Windows palette sampling supports JPEG and PNG images; WebP needs a separate decoder");
+      }
+      const script = `
+        Add-Type -AssemblyName System.Drawing
+        $source = [System.Drawing.Image]::FromFile($env:PASEO_SAMPLE_INPUT)
+        try {
+          $scale = [Math]::Min(1.0, [Math]::Min(96.0 / $source.Width, 96.0 / $source.Height))
+          $width = [Math]::Max(1, [int][Math]::Round($source.Width * $scale))
+          $height = [Math]::Max(1, [int][Math]::Round($source.Height * $scale))
+          $bitmap = New-Object System.Drawing.Bitmap($width, $height, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+          try {
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            try {
+              $graphics.DrawImage($source, 0, 0, $width, $height)
+            } finally {
+              $graphics.Dispose()
+            }
+            $bitmap.Save($env:PASEO_SAMPLE_OUTPUT, [System.Drawing.Imaging.ImageFormat]::Bmp)
+          } finally {
+            $bitmap.Dispose()
+          }
+        } finally {
+          $source.Dispose()
+        }
+      `;
+      const powerShellExecutable = path.join(
+        process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows",
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+      );
+      await execFileAsync(powerShellExecutable, [
+        "-NoProfile",
+        "-NonInteractive",
+        "-EncodedCommand",
+        Buffer.from(script, "utf16le").toString("base64"),
+      ], {
+        env: {
+          ...process.env,
+          PASEO_SAMPLE_INPUT: inputPath,
+          PASEO_SAMPLE_OUTPUT: bitmapPath,
+        },
+        timeout: 20_000,
+        windowsHide: true,
+      });
+    } else {
+      await execFileAsync("/usr/bin/sips", [
+        "-Z",
+        "96",
+        "-s",
+        "format",
+        "bmp",
+        inputPath,
+        "--out",
+        bitmapPath,
+      ], { timeout: 20_000 });
+    }
     const bitmap = await readFile(bitmapPath);
     return deriveThemeColors(parseBitmapPixels(bitmap).pixels);
   } finally {

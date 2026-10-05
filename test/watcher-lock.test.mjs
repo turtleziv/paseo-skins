@@ -4,7 +4,37 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { acquireWatcherLock, readWatcherLock } from "../src/watcher-lock.mjs";
+import { acquireWatcherLock, getProcessStart, readWatcherLock } from "../src/watcher-lock.mjs";
+
+test("Windows process start lookup uses a fixed PowerShell executable and numeric PID", async () => {
+  const calls = [];
+  const start = await getProcessStart(4242, {
+    platform: "win32",
+    environment: { SystemRoot: "C:\\Windows" },
+    executeFileImplementation: async (...argumentsList) => {
+      calls.push(argumentsList);
+      return { stdout: "123456789\r\n" };
+    },
+  });
+  assert.equal(start, "123456789");
+  assert.equal(calls[0][0], "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+  assert.match(calls[0][1].at(-1), /Get-Process -Id 4242/);
+  assert.match(calls[0][1].at(-1), /StartTime\.ToUniversalTime\(\)\.Ticks/);
+  assert.equal(calls[0][2].windowsHide, true);
+});
+
+test("Windows process start lookup rejects nonnumeric PIDs before invoking PowerShell", async () => {
+  let invoked = false;
+  const start = await getProcessStart("1; Write-Output injected", {
+    platform: "win32",
+    executeFileImplementation: async () => {
+      invoked = true;
+      return { stdout: "123" };
+    },
+  });
+  assert.equal(start, null);
+  assert.equal(invoked, false);
+});
 
 test("watcher lock prevents competing processes and releases cleanly", async (context) => {
   const stateRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-watcher-lock-"));
@@ -45,4 +75,19 @@ test("watcher lock replaces a stale owner", async (context) => {
   );
   assert.equal(lock.record.themeId, "fresh-theme");
   await lock.release();
+});
+
+test("Windows watcher lock records process start identity", { skip: process.platform !== "win32" }, async (context) => {
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-watcher-win-start-"));
+  context.after(() => rm(stateRoot, { force: true, recursive: true }));
+  const lock = await acquireWatcherLock(
+    { remoteDebuggingPort: 19226, themeId: "win-start" },
+    { stateRoot },
+  );
+  try {
+    assert.match(lock.record.processStart, /^\d+$/);
+    assert.equal((await readWatcherLock(19226, { stateRoot })).active, true);
+  } finally {
+    await lock.release();
+  }
 });

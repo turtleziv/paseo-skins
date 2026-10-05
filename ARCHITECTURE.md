@@ -28,7 +28,7 @@ local/remote manifest ──► theme-loader ──► validated theme + verifie
 - `src/remote-theme.mjs` adds HTTPS, redirect, origin, size, and cache constraints before delegating to the loader.
 - `src/cli-options.mjs` and `src/cli-help.mjs` are pure command-interface modules. `src/cli.mjs` orchestrates I/O and lifecycle operations.
 - `src/cdp-client.mjs` owns target discovery, loopback WebSocket validation, screenshot capture, and watcher registration.
-- `src/autostart.mjs` owns the persistent Guardian runtime configuration. Public one-click commands explicitly pass `--persist`, so `apply` may install or reconfigure the Guardian; it must preserve the single-watcher lock and wait for both lock and renderer theme identity before reporting active success.
+- `src/autostart.mjs` dispatches persistent Guardian setup by platform. On Windows, `src/windows-autostart.mjs` owns the current-user environment value and logon task. The task runs `src/windows-guardian-launch.vbs` through windowless `wscript.exe`; the launcher waits for Node, retries nonzero exits with exponential delays from 1 to 60 seconds, and exits on a clean code 0. `src/windows-guardian.mjs` waits for a validated Paseo loopback target, manages one watcher through its stdin stop channel, and stops the watcher when that target disappears. Public one-click commands explicitly pass `--persist`, so `apply` may install or reconfigure the Guardian; it must preserve the single-watcher lock and wait for both lock and renderer theme identity before reporting active success.
 - `src/renderer-style-audit.mjs` owns the supported-page plan, renderer contrast and hover checks, structured reporting, and restoration of the original route. The CLI adapter is `scripts/audit-renderer-styles.mjs`.
 - `src/stage-black-gold-skin.mjs` is serialized into the renderer. It therefore remains self-contained and must provide a complete `destroy` path.
 - On hosts exposing Unistyles color variables, Paseo owns interface colors and color scheme. The skin keeps its artwork and layout transparency, using live host variables for its backdrop, selection and hover effects. This supports built-in, system and plugin themes without copying a theme registry or freezing computed control colors. Older hosts without tokens retain the manifest palette; early fallback overrides are removed when host tokens mount.
@@ -63,12 +63,12 @@ local/remote manifest ──► theme-loader ──► validated theme + verifie
 | Website interaction | static build/tests plus desktop and 390 px real-browser interaction and screenshot review |
 | Public image or manifest | integrity load, catalog uniqueness, provenance check, site link check |
 | DreamSkin import or package format | adapter and ZIP safety tests, byte-identical image hash check, package attribution check, `npm run release:check` |
-| Autostart | plist/unit tests and live `autostart:status`; never reinstall or restart Paseo without explicit authorization |
+| Autostart | macOS plist or Windows task/unit tests and live `autostart:status`; never reinstall or restart Paseo without explicit authorization |
 
 ## Intentional non-goals
 
 - No modification of `app.asar`, code signatures, Paseo daemon data, or Agent data.
-- No claim of Windows, Linux, or Intel Mac support without real-device evidence.
+- Platform claims must be scoped to the verified host, Paseo version, and published artifact. The local Windows branch has Paseo 0.10.3 and reboot-login evidence for the hidden task. External termination of its Guardian Node child was followed by a launcher retry and verified theme injection into isolated Paseo. GitHub Windows CI and recovery after external termination of the launcher or task remain unverified; Linux and Intel Mac have no real-device evidence.
 - No desktop theme manager until a browser plus CLI demonstrably cannot cover the required workflow.
 - No generic plugin abstraction until at least two real consumers need the same extension boundary.
 

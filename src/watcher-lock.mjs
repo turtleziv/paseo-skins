@@ -13,9 +13,28 @@ function defaultStateRoot() {
   return path.join(os.homedir(), ".paseo-skin-loader");
 }
 
-async function getProcessStart(processIdentifier) {
+export async function getProcessStart(processIdentifier, {
+  platform = process.platform,
+  environment = process.env,
+  executeFileImplementation = execFileAsync,
+} = {}) {
   try {
-    const { stdout } = await execFileAsync("/bin/ps", [
+    if (!Number.isSafeInteger(processIdentifier) || processIdentifier < 1) return null;
+    if (platform === "win32") {
+      const systemRoot = environment.SystemRoot || environment.WINDIR || "C:\\Windows";
+      const powershellExecutable = path.win32.join(
+        systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe",
+      );
+      const { stdout } = await executeFileImplementation(powershellExecutable, [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `$process = Get-Process -Id ${processIdentifier} -ErrorAction Stop; $process.StartTime.ToUniversalTime().Ticks`,
+      ], { timeout: 2_000, windowsHide: true });
+      const ticks = stdout.trim();
+      return /^\d+$/.test(ticks) ? ticks : null;
+    }
+    const { stdout } = await executeFileImplementation("/bin/ps", [
       "-p",
       String(processIdentifier),
       "-o",
@@ -106,11 +125,15 @@ export async function acquireWatcherLock(
   await ensurePrivateStateRoot(stateRoot);
   const lockPath = path.join(stateRoot, `watcher-${remoteDebuggingPort}.lock`);
   const nonce = randomBytes(16).toString("hex");
+  const processStart = await getProcessStart(process.pid);
+  if (process.platform === "win32" && !processStart) {
+    throw new Error("Could not verify watcher process start on Windows");
+  }
   const record = {
     schemaVersion: LOCK_SCHEMA_VERSION,
     nonce,
     pid: process.pid,
-    processStart: await getProcessStart(process.pid),
+    processStart,
     port: remoteDebuggingPort,
     themeId,
     createdAt: new Date().toISOString(),

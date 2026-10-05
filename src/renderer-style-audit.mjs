@@ -1,6 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
 
 import { openPaseoRendererSession } from "./cdp-client.mjs";
+import {
+  buildStageBlackGoldResetSource,
+  buildStageBlackGoldVerificationSource,
+} from "./stage-black-gold-skin.mjs";
 
 const APPLICATION_SECTION_DEFINITIONS = [
   ["settings:通用", "通用", "/settings/general"],
@@ -62,7 +66,7 @@ export const RENDERER_STYLE_AUDIT_HOVER_PLAN = Object.freeze([
   }),
   Object.freeze({
     label: "settings:navigation",
-    selectorExpression: `[...document.querySelectorAll('[data-testid="settings-sidebar"] button')].find((element) => element.textContent?.trim() === '外观')`,
+    selectorExpression: `[...document.querySelectorAll('[data-testid="settings-sidebar"] button')].find((element) => ['外观', 'Appearance'].includes(element.textContent?.trim()))`,
   }),
 ]);
 
@@ -404,9 +408,10 @@ async function ensureSettings(session, wait) {
 
 async function navigateToApplicationSetting(session, page, wait) {
   await ensureSettings(session, wait);
+  const englishText = page.path.split("/").at(-1).replace(/^./, (character) => character.toUpperCase());
   return clickAndWait(
     session,
-    `[...document.querySelectorAll('button')].find((element) => element.getBoundingClientRect().left < 320 && element.textContent?.trim() === ${JSON.stringify(page.text)})`,
+    `[...document.querySelectorAll('[data-testid="settings-sidebar"] button')].find((element) => ${JSON.stringify([page.text, englishText])}.includes(element.textContent?.trim()))`,
     (candidate) => candidate === page.path,
     wait,
   );
@@ -632,11 +637,17 @@ export function buildRendererStyleAuditReport({
 }
 
 export async function auditRendererStyles({
+  coldInjectEachPage = false,
+  expectedThemeId = null,
   includeDevelopmentTargets = false,
+  injectionSource = null,
   openSession = openPaseoRendererSession,
   remoteDebuggingPort = 9224,
   wait = delay,
 } = {}) {
+  if (coldInjectEachPage && (!expectedThemeId || !injectionSource)) {
+    throw new Error("Cold renderer audit requires a theme id and injection source");
+  }
   const session = await openSession(remoteDebuggingPort, { includeDevelopmentTargets });
   const originalState = await session.evaluate(buildCaptureStateExpression());
   const pages = [];
@@ -644,12 +655,32 @@ export async function auditRendererStyles({
   const runtimeErrors = [];
   let restoredState = null;
 
+  const capturePage = async (page) => {
+    if (coldInjectEachPage) {
+      const reset = await session.evaluate(buildStageBlackGoldResetSource());
+      if (reset?.skinInstalled || reset?.overlayPresent || reset?.stylePresent) {
+        throw new Error(`Cold injection reset was incomplete on ${page.label}`);
+      }
+      await session.evaluate(injectionSource);
+      const verification = await session.evaluate(buildStageBlackGoldVerificationSource({
+        expectedThemeId,
+      }));
+      if (!verification?.pass) {
+        throw new Error(`Cold injection failed on ${page.label}: ${JSON.stringify(verification)}`);
+      }
+    }
+    const snapshot = await session.evaluate(buildRendererStylePageSnapshotExpression(page.label));
+    pages.push(coldInjectEachPage
+      ? { ...snapshot, coldInjectedThemeId: expectedThemeId }
+      : snapshot);
+  };
+
   try {
     await session.evaluate(buildInstallAuditStabilizerExpression());
     for (const page of RENDERER_STYLE_AUDIT_PAGE_PLAN) {
       if (page.kind === "application-setting") {
         await navigateToApplicationSetting(session, page, wait);
-        pages.push(await session.evaluate(buildRendererStylePageSnapshotExpression(page.label)));
+        await capturePage(page);
         if (!hoverChecksByLabel.has(SETTINGS_HOVER_LABEL)) {
           const hoverPlan = RENDERER_STYLE_AUDIT_HOVER_PLAN.find(
             ({ label }) => label === SETTINGS_HOVER_LABEL,
@@ -663,10 +694,10 @@ export async function auditRendererStyles({
         }
       } else if (page.kind === "host-setting") {
         await navigateToHostSetting(session, page, wait);
-        pages.push(await session.evaluate(buildRendererStylePageSnapshotExpression(page.label)));
+        await capturePage(page);
       } else if (page.kind === "workspace") {
         await leaveSettings(session, wait);
-        pages.push(await session.evaluate(buildRendererStylePageSnapshotExpression(page.label)));
+        await capturePage(page);
         for (const hoverPlan of RENDERER_STYLE_AUDIT_HOVER_PLAN) {
           if (hoverPlan.label === SETTINGS_HOVER_LABEL) continue;
           hoverChecksByLabel.set(
@@ -693,7 +724,7 @@ export async function auditRendererStyles({
           (candidate) => candidate === `/${page.label === "history" ? "sessions" : "schedules"}`,
           wait,
         );
-        pages.push(await session.evaluate(buildRendererStylePageSnapshotExpression(page.label)));
+        await capturePage(page);
       }
     }
   } catch (error) {
@@ -704,6 +735,16 @@ export async function auditRendererStyles({
     } catch (error) {
       runtimeErrors.push(`State restoration failed: ${error.message}`);
       restoredState = await session.evaluate(buildCaptureStateExpression()).catch(() => null);
+    }
+    if (coldInjectEachPage) {
+      try {
+        const activeTheme = await session.evaluate(
+          "window.__PASEO_STAGE_BLACK_GOLD_SKIN__?.themeId ?? null",
+        );
+        if (activeTheme !== expectedThemeId) await session.evaluate(injectionSource);
+      } catch (error) {
+        runtimeErrors.push(`Cold audit skin restoration failed: ${error.message}`);
+      }
     }
     await session.evaluate(buildRemoveAuditStabilizerExpression()).catch((error) => {
       runtimeErrors.push(`Audit stabilizer cleanup failed: ${error.message}`);

@@ -1,10 +1,25 @@
 import { execFile, spawn } from "node:child_process";
 import { access, constants as fileSystemConstants } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { promisify } from "node:util";
 
 const executeFile = promisify(execFile);
 
-export const DEFAULT_PASEO_EXECUTABLE = "/Applications/Paseo.app/Contents/MacOS/Paseo";
+export function resolveDefaultPaseoExecutable({
+  platform = process.platform,
+  environment = process.env,
+} = {}) {
+  if (platform === "win32") {
+    const localAppData = environment.LOCALAPPDATA || path.win32.join(
+      environment.USERPROFILE || os.homedir(), "AppData", "Local",
+    );
+    return path.win32.join(localAppData, "Programs", "Paseo", "Paseo.exe");
+  }
+  return "/Applications/Paseo.app/Contents/MacOS/Paseo";
+}
+
+export const DEFAULT_PASEO_EXECUTABLE = resolveDefaultPaseoExecutable();
 
 export function mergeElectronFlags(existingFlags, remoteDebuggingPort) {
   const tokens = String(existingFlags ?? "")
@@ -32,7 +47,25 @@ export function buildPaseoLaunchEnvironment(environment, remoteDebuggingPort) {
 export async function isPaseoApplicationRunning({
   paseoExecutable = DEFAULT_PASEO_EXECUTABLE,
   executeFileImplementation = executeFile,
+  platform = process.platform,
+  environment = process.env,
 } = {}) {
+  if (platform === "win32") {
+    const systemRoot = environment.SystemRoot || environment.WINDIR || "C:\\Windows";
+    const powershellExecutable = path.win32.join(
+      systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe",
+    );
+    const { stdout } = await executeFileImplementation(
+      powershellExecutable,
+      ["-NoProfile", "-NonInteractive", "-Command", "@(Get-Process -Name Paseo -ErrorAction SilentlyContinue).Count"],
+      { timeout: 2_000, windowsHide: true },
+    );
+    const processCount = stdout.trim();
+    if (!/^\d+$/.test(processCount)) {
+      throw new Error("Could not read the Paseo process count on Windows");
+    }
+    return Number(processCount) > 0;
+  }
   const { stdout } = await executeFileImplementation("/bin/ps", ["-axo", "command="]);
   return stdout
     .split("\n")

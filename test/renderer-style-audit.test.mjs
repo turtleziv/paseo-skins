@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
 import {
+  auditRendererStyles,
   buildRendererStyleHoverStateExpression,
   buildRendererStyleAuditReport,
   buildRendererStylePageSnapshotExpression,
@@ -54,6 +55,102 @@ test("renderer style audit covers every supported application surface exactly on
     "sidebar:workspace-row",
     "settings:navigation",
   ]);
+});
+
+test("renderer audit reaches General in an English settings sidebar", async () => {
+  let generalClicks = 0;
+  const originalPath = "/settings/general";
+  const generalButton = {
+    textContent: "General",
+    getBoundingClientRect: () => ({ left: 80 }),
+    click: () => { generalClicks += 1; },
+  };
+  const session = {
+    close: () => {},
+    evaluate: async (expression) => {
+      if (expression === "window.location.pathname") return originalPath;
+      if (expression.includes("sidebarScrollTop:")) {
+        return { path: originalPath, sidebarScrollTop: 0 };
+      }
+      if (expression.includes("const element =")) {
+        return vm.runInNewContext(expression, {
+          document: { querySelectorAll: () => [generalButton] },
+        });
+      }
+      if (expression.includes("const label =")) throw new Error("first settings page reached");
+      return true;
+    },
+    movePointer: async () => {},
+  };
+
+  const report = await auditRendererStyles({ openSession: async () => session, wait: async () => {} });
+
+  assert.ok(generalClicks > 0);
+  assert.ok(report.failures.some(({ message }) => message === "first settings page reached"));
+  assert.equal(report.restoredPath, originalPath);
+});
+
+test("cold audit resets and reinjects on the target page before taking its snapshot", async () => {
+  const originalPath = "/settings/general";
+  let currentPath = originalPath;
+  const events = [];
+  const session = {
+    close: () => {},
+    evaluate: async (expression) => {
+      if (expression === "window.location.pathname") return currentPath;
+      if (expression.includes("sidebarScrollTop:")) {
+        return { path: currentPath, sidebarScrollTop: 0 };
+      }
+      if (expression.includes("root?.style.removeProperty")) {
+        events.push("reset");
+        return { skinInstalled: false, overlayPresent: false, stylePresent: false };
+      }
+      if (expression === "cold-injection-probe") {
+        events.push("inject");
+        return true;
+      }
+      if (expression.includes("expectedThemeId:")) {
+        events.push("verify");
+        return { pass: true, themeId: "greenhouse" };
+      }
+      if (expression.includes("const element =")) {
+        if (expression.includes("settings-back-to-workspace")) currentPath = "/new";
+        if (expression.includes("sidebar-settings")) currentPath = originalPath;
+        return true;
+      }
+      if (expression.includes("const label =")) {
+        events.push("snapshot");
+        throw new Error("first cold page captured");
+      }
+      return true;
+    },
+    movePointer: async () => {},
+  };
+
+  const report = await auditRendererStyles({
+    coldInjectEachPage: true,
+    expectedThemeId: "greenhouse",
+    injectionSource: "cold-injection-probe",
+    openSession: async () => session,
+    wait: async () => {},
+  });
+
+  assert.deepEqual(events.slice(0, 4), ["reset", "inject", "verify", "snapshot"]);
+  assert.ok(report.failures.some(({ message }) => message === "first cold page captured"));
+});
+
+test("renderer audit finds the Appearance hover target in English and Chinese", () => {
+  const selector = RENDERER_STYLE_AUDIT_HOVER_PLAN.find(
+    ({ label }) => label === "settings:navigation",
+  ).selectorExpression;
+
+  for (const textContent of ["Appearance", "外观"]) {
+    const button = { textContent };
+    const selected = vm.runInNewContext(selector, {
+      document: { querySelectorAll: () => [button] },
+    });
+    assert.equal(selected, button, `Could not find ${textContent}`);
+  }
 });
 
 test("renderer page snapshot expression is self-contained renderer JavaScript", () => {
@@ -284,6 +381,8 @@ test("renderer style audit CLI exposes help without connecting to Paseo", () => 
 
   assert.equal(help.status, 0);
   assert.match(help.stdout, /npm run audit:renderer/);
+  assert.match(help.stdout, /--cold-inject/);
+  assert.match(help.stdout, /--theme/);
   assert.equal(invalidPort.status, 1);
   assert.match(invalidPort.stderr, /Invalid CDP port/);
 });

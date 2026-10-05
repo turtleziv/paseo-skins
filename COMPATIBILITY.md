@@ -4,6 +4,7 @@ Paseo Skins 通过运行时 DOM 与 CDP target 能力判断兼容性，不只比
 
 | Paseo | Platform | Last checked | Evidence |
 |---|---|---|---|
+| 0.10.3 | Windows x64, local `windows-support` branch | 2026-10-06 | Isolated `doctor`/`status`/`inject`/`verify`/`reset`; Guardian restored the theme after Paseo restart and switched theme with one watcher; 21-page/5-hover renderer audit passed. After reboot, the hidden task started at user login with no Node window. Explorer launched Paseo, the watcher injected the greenhouse theme, and live `verify --theme` passed. After Paseo closed, Guardian stopped the watcher, stayed running, and its idle log grew by 0 bytes over 8 seconds. External termination of the production Guardian Node produced launcher exit -1 and a restart after 1 second; the new child under the same hidden launcher injected the greenhouse theme into isolated Paseo, and `verify --theme` passed. Isolated per-page cold injection passed 21 pages and 5 hover checks; `check` 127/127 and `release:check` passed locally. |
 | 0.5.0-beta.2 | macOS arm64 | 2026-08-20 | Live `status`, `verify`, 21-page/5-hover renderer audit, skin version 17, long diff counters with trailing workspace action, 101 automated tests |
 | 0.3.0 | macOS arm64 | 2026-08-09 | Live `status` and `verify`, skin version 12, workspace/schedules/sessions/new SPA routes, workspace menu and hover-in/hover-out screenshots, 74 automated tests |
 
@@ -29,4 +30,4 @@ Paseo Skins 通过运行时 DOM 与 CDP target 能力判断兼容性，不只比
 4. 停止 watcher，运行 `paseo-skin reset`，确认原生 UI 恢复。
 5. 只有上述证据全部通过，才更新本表的版本和日期。
 
-Windows、Linux 和 Intel Mac 当前均未声明支持；新增平台必须提供真实设备证据和对应 CI/恢复测试。
+Windows 证据仅适用于尚未发布的本地 `windows-support` 分支和 Paseo 0.10.3。独立任务中，Task Scheduler 的 `RestartOnFailure` 设置没有在非零退出后触发重启；本分支改由隐藏启动器在 Node 非零退出后重试，并已在正式 Guardian Node 遭外部终止后验证。逐页冷注入已在隔离的双 workspace profile 上验证，详见 `docs/RENDERER_STYLE_SAFETY.md`。Windows CI matrix 已加入本地分支，但 GitHub runner 尚未实际执行；隐藏启动器或排程本身遭外部终止后的恢复未验证。公开上游包与 Agent Skill 仍是 macOS 版本。Linux 和 Intel Mac 当前均未声明支持；新增平台必须提供真实设备证据和对应 CI/恢复测试。

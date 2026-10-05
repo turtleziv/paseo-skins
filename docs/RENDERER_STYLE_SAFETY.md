@@ -32,6 +32,14 @@
 npm run audit:renderer -- --port 9224
 ```
 
+要在每个目标页验证冷注入，使用已通过 `inspect` 的 Theme v2 manifest，并在隔离的 Paseo profile 运行：
+
+```powershell
+npm.cmd run audit:renderer -- --cold-inject --theme .\assets\stage-black-gold.theme.json --port 9224
+```
+
+`--cold-inject` 会在进入每页后执行 `reset`、重新注入指定主题并验证，再取得快照；需要同时提供 `--theme`。它会暂时改动该 renderer 的主题和路由，建议只在隔离实例运行。Paseo 0.10.3 的整页 reload 会把深层设置路由带回 `/open-project`，不能用 reload 代表目标页冷注入。
+
 命令会执行以下操作：
 
 - 保存当前路径和 workspace 列表滚动位置。
@@ -55,6 +63,7 @@ npm --silent run audit:renderer -- --port 9224 \
 - `pass`：所有检查是否通过。
 - `failures`：带稳定 `code` 的问题列表。
 - `pages`：每个页面的低对比度、内联背景和辅助层结果。
+- `pages[].coldInjectedThemeId`：冷注入模式下，每页完成重新注入与验证的主题 ID。
 - `hoverChecks`：hover 进入、移出、可见性与残留结果。
 - `hoverChecks[].workspaceActionOverlaps`：workspace 统计文字与更多按钮的二维交集；非空时报告 `workspace-action-overlap`。
 - `originalPath` / `restoredPath`：用于证明巡检没有改变用户最终页面。

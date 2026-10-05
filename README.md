@@ -6,7 +6,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-d5b36b.svg)](LICENSE)
 [![Agent Skill](https://img.shields.io/badge/Agent%20Skill-paseo--skins-79c9a1.svg)](skills/paseo-skins/SKILL.md)
 
-**Open-source Paseo themes and skins, a browser-based theme builder Studio, a live simulator, a standard Agent Skill, and a safe macOS CDP theme loader.** Browse independent backgrounds, preview complete UI states, turn one image into a verified theme, apply it with one CLI command, and restore the native Paseo UI at any time.
+**Open-source Paseo themes and skins, a browser-based theme builder Studio, a live simulator, a standard Agent Skill, and a safe CDP theme loader.** Browse independent backgrounds, preview complete UI states, turn one image into a verified theme, apply it with one CLI command, and restore the native Paseo UI at any time.
 
 一个面向 Paseo 的非官方开源主题皮肤画廊、Agent Skill 与本地加载器。网页负责主题预览和主题包直下；Skill 负责安全工作流，CLI 负责校验声明式主题，并通过 `127.0.0.1` 上的 Chrome DevTools Protocol（CDP）只向 `paseo://app/` 渲染窗口注入样式。
 
@@ -27,7 +27,7 @@
 - watcher 覆盖当前窗口、reload 和后续新窗口；停止时注销 reload hook，同一端口只允许一个 watcher。
 - `pause` / `reset` 可恢复根节点、样式、overlay 和动态内联样式。
 - Theme v2 提供公开 JSON Schema；加载前校验图片类型、SHA-256、字节数、尺寸和像素数。
-- 一张本地 PNG、JPEG 或 WebP 即可自动取色并生成完整性可验证的主题，浏览器端不会上传图片。
+- 一张本地图片即可自动取色并生成完整性可验证的主题；macOS CLI 支持 PNG、JPEG、WebP，Windows CLI 的自动取色支持 PNG、JPEG。浏览器端不会上传图片。
 - 每套公开主题都提供 Paseo ZIP 直下；浏览器点击后只拉取该主题的清单与原图，校验 SHA-256 并在本地生成包含 Theme v2、未经修改原图和来源说明的 ZIP，解压后即可离线校验、应用。
 - 支持通过 `--theme-url` 安装远程主题；只接受 HTTPS 同目录 JSON 与图片，不执行远程脚本。
 - `doctor` 提供只读环境诊断，`verify` 检查根节点可见性、overlay 安全和横向溢出。
@@ -70,8 +70,8 @@ npx skills add huangguang1999/paseo-skins --skill paseo-skins -g
 
 ## 环境要求
 
-- macOS
-- `/Applications/Paseo.app`
+- macOS 与 `/Applications/Paseo.app`；本地 `windows-support` 分支另有 Windows 试验支持
+- Windows 试验使用当前用户安装的 Paseo 0.10.3 与 `Paseo.exe`
 - Node.js 22 或更高版本
 
 ## 快速开始
@@ -111,7 +111,7 @@ npx --yes github:huangguang1999/paseo-skins start \
 | `npm run create -- --image /path/to/image.webp --name "山海夜航" --output ./my-theme` | 从一张图自动取色并生成 Theme v2 |
 | `npm run pause -- --port 9224` | 移除当前主题，恢复官方渲染样式 |
 | `npm run reset -- --port 9224` | 与 `pause` 相同，用于故障恢复 |
-| `npm run autostart:install` | 安装 macOS 登录代理，让皮肤在每次 Paseo 重启后自动恢复 |
+| `npm run autostart:install` | 安装当前平台的登录常驻程序，让皮肤在每次 Paseo 重启后自动恢复 |
 | `npm run autostart:status` | 查看开机自启代理是否已加载 |
 | `npm run autostart:uninstall` | 移除开机自启代理 |
 | `npm run check` | 运行语法检查和全部测试 |
@@ -158,6 +158,30 @@ npm run autostart:uninstall
 
 自启代理不会 patch 或重启 Paseo，也不会重启 daemon；它只在登录时注入环境变量并守护皮肤 watcher。生成的文件位于 `~/Library/LaunchAgents/com.paseo-skins.*.plist` 和 `~/.paseo-skin-loader/guardian.mjs`。
 
+## Windows 本地试验分支
+
+以下命令只适用于本地检出的 `windows-support` 分支；上面的 `github:huangguang1999/paseo-skins` 和公开 Agent Skill 仍指向上游，不能用它们验证这份尚未发布的 Windows 改动。在 PowerShell 中从仓库根目录运行：
+
+```powershell
+npm.cmd run doctor -- --json
+node .\src\cli.mjs autostart install --theme .\assets\stage-black-gold.theme.json --json
+node .\src\cli.mjs autostart status --json
+node .\src\cli.mjs verify --theme .\assets\stage-black-gold.theme.json --json
+```
+
+Windows 安装只写当前用户的 `PASEO_ELECTRON_FLAGS`，并注册一个当前用户登录时启动的 Task Scheduler Guardian。任务通过 `wscript.exe` 隐藏启动 Node Guardian，避免留下可被误关的黑色控制台窗口；Guardian 异常退出时，启动器会以 1 秒起、最多 60 秒的间隔重试，正常退出码 0 则结束任务。Guardian 等待 `127.0.0.1:9224` 上经过 Paseo target 验证的 CDP，再启动单一 watcher；Paseo 关闭、CDP 消失时会正常停止 watcher，保留 Guardian 等下次启动。配置与事件日志存于 `%USERPROFILE%\.paseo-skin-loader\`。如果原本已有不属于本工具的 `PASEO_ELECTRON_FLAGS` 或同名任务，安装会拒绝覆盖。已经运行而没有 CDP 的 Paseo 不会被中断；完成手头工作后正常关闭并重新打开一次。
+
+已经安装旧版可见控制台任务时，先正常关闭 Paseo，再运行 `node .\src\cli.mjs autostart uninstall --json`，然后用上面的 `autostart install` 命令重新安装；安装器不会原位覆盖旧任务。可用 `autostart status --json` 和 `%USERPROFILE%\.paseo-skin-loader\windows-autostart.log` 检查 Guardian，而无需寻找控制台窗口。
+
+卸载和还原当前窗口：
+
+```powershell
+node .\src\cli.mjs autostart uninstall --json
+node .\src\cli.mjs reset --port 9224
+```
+
+这份分支在 Windows Paseo 0.10.3 的隔离实例上验证了任务启动、自动注入、Paseo 重启后的恢复、切换主题、正常停止与卸载。真实用户重启电脑后的登录已触发隐藏任务；Guardian 没有控制台窗口。从 Explorer 打开 Paseo 后，watcher 自动套回指定主题，`verify --theme` 通过；正常关闭 Paseo 后，watcher 停止而 Guardian 继续运行，空闲期间日志未继续增长。正式 Guardian Node 遭外部终止后，隐藏启动器在同一任务中重试，新 Guardian 对隔离 Paseo 再次注入指定主题，`verify --theme` 通过。隔离实例的逐页冷注入巡检通过 21 页和 5 类 hover；Windows CI 配置已加入本地分支，尚未在 GitHub runner 执行。详情见 `COMPATIBILITY.md`。
+
 ## 自定义主题
 
 最省事的方式是打开[在线主题 Studio](https://huangguang1999.github.io/paseo-skins/studio/)：图片只在浏览器本地处理，不会上传，并可直接在模拟器中调整焦点、外观和颜色。也可以直接用 CLI：
@@ -173,6 +197,16 @@ npm run inspect -- --theme "$PWD/my-theme/mountain-night.theme.json"
 npm start -- --theme "$PWD/my-theme/mountain-night.theme.json"
 ```
 
+若要让本地 clone 的无参数 `start`、`inspect` 和 `autostart install` 使用自定义主题，在仓库根目录建立 `.paseo-default-theme.json`，填入主题清单的绝对路径：
+
+```json
+{
+  "manifestPath": "C:\\path\\to\\my-theme\\mountain-night.theme.json"
+}
+```
+
+此文件已加入 `.gitignore`，不会随 npm 包发布。`--theme` 或 `--theme-url` 仍可在单次命令中覆盖本地默认值。Windows 下使用 `node .\src\cli.mjs inspect` 验证清单与图片，再用 `node .\src\cli.mjs autostart install` 把该主题写入 Guardian 设置。
+
 如需切回原黑金主题：
 
 ```bash
@@ -185,7 +219,7 @@ npm start -- --theme "$PWD/assets/stage-black-gold.theme.json"
 npm run doctor -- --theme-url 'https://example.com/themes/my-theme.theme.json'
 ```
 
-主题格式、字段范围和图片限制见 [Theme v2 格式](docs/THEME_FORMAT.md) 与公开 [JSON Schema](schema/paseo-theme-v2.schema.json)。当前支持 PNG、JPEG、WebP，单图不超过 16 MB、单边不超过 16384 px、总像素不超过 5000 万。建议使用 16:9 横图，并让主体避开左侧导航区域。公开投稿还需在 [ASSET_PROVENANCE.md](ASSET_PROVENANCE.md) 登记作者、来源和许可证。
+主题格式、字段范围和图片限制见 [Theme v2 格式](docs/THEME_FORMAT.md) 与公开 [JSON Schema](schema/paseo-theme-v2.schema.json)。主题加载支持 PNG、JPEG、WebP；Windows CLI 自动取色暂只支持 PNG、JPEG。单图不超过 16 MB、单边不超过 16384 px、总像素不超过 5000 万。建议使用 16:9 横图，并让主体避开左侧导航区域。公开投稿还需在 [ASSET_PROVENANCE.md](ASSET_PROVENANCE.md) 登记作者、来源和许可证。
 
 ## 工作原理
 

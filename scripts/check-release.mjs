@@ -46,9 +46,14 @@ for (const theme of catalog.themes) {
   }
 }
 
+const npmCliPath = process.env.npm_execpath || path.join(
+  path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js",
+);
 const { stdout } = await execFileAsync(
-  "npm",
-  ["pack", "--dry-run", "--json", "--ignore-scripts"],
+  process.platform === "win32" ? process.execPath : "npm",
+  process.platform === "win32"
+    ? [npmCliPath, "pack", "--dry-run", "--json", "--ignore-scripts"]
+    : ["pack", "--dry-run", "--json", "--ignore-scripts"],
   { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 8 * 1024 * 1024 },
 );
 const [pack] = JSON.parse(stdout);
@@ -61,6 +66,9 @@ for (const requiredFile of [
   "src/cli.mjs",
   "src/cli-options.mjs",
   "src/cli-help.mjs",
+  "src/windows-autostart.mjs",
+  "src/windows-guardian-launch.vbs",
+  "src/windows-guardian.mjs",
   "assets/stage-black-gold.theme.json",
   "ARCHITECTURE.md",
   "ASSET_PROVENANCE.md",

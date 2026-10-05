@@ -76,3 +76,20 @@ test("createThemeFromImage writes and validates a v2 theme", async (context) => 
     /already exists/,
   );
 });
+
+test("createThemeFromImage samples a JPEG on Windows without an injected palette", {
+  skip: process.platform !== "win32",
+}, async (context) => {
+  const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "paseo-theme-windows-test-"));
+  context.after(() => rm(outputDirectory, { force: true, recursive: true }));
+  const created = await createThemeFromImage({
+    identifier: "windows-sampled-jpeg",
+    imagePath: new URL("../site/themes/morning-mist.jpg", import.meta.url),
+    name: "Windows JPEG",
+    outputDirectory,
+  });
+  const loaded = await loadTheme(created.manifestOutputPath);
+  assert.equal(loaded.theme.id, "windows-sampled-jpeg");
+  assert.match(loaded.theme.colors.accent, /^#[0-9a-f]{6}$/);
+  assert.equal(loaded.theme.integrity.sha256, created.manifest.integrity.sha256);
+});

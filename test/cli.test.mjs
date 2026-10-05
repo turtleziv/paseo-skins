@@ -1,15 +1,34 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { PassThrough } from "node:stream";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import {
+  attachWatcherStopInput,
   parseArguments,
   selectApplyMode,
   selectPersistentActivation,
 } from "../src/cli.mjs";
 
 const execFileAsync = promisify(execFile);
+
+test("watcher accepts an exact stop line from stdin and detaches its listener", () => {
+  const input = new PassThrough();
+  const abort = new AbortController();
+  const detach = attachWatcherStopInput(input, () => abort.abort());
+  input.write("unstoppable\nsto");
+  assert.equal(abort.signal.aborted, false);
+  input.write("p\r\n");
+  assert.equal(abort.signal.aborted, true);
+  detach();
+  assert.equal(input.listenerCount("data"), 0);
+  input.destroy();
+});
 
 test("parseArguments supports top-level help and safe defaults", () => {
   assert.equal(parseArguments(["--help"]).command, "help");
@@ -34,10 +53,10 @@ test("parseArguments resolves command help before required positional arguments"
 });
 
 test("CLI help is side-effect free and supports progressive disclosure", async () => {
-  const cliPath = new URL("../src/cli.mjs", import.meta.url);
+  const cliPath = fileURLToPath(new URL("../src/cli.mjs", import.meta.url));
   const [globalHelp, applyHelp] = await Promise.all([
-    execFileAsync(process.execPath, [cliPath.pathname]),
-    execFileAsync(process.execPath, [cliPath.pathname, "apply", "--help"]),
+    execFileAsync(process.execPath, [cliPath]),
+    execFileAsync(process.execPath, [cliPath, "apply", "--help"]),
   ]);
 
   assert.match(globalHelp.stdout, /Usage:/);
@@ -158,5 +177,25 @@ test("parseArguments validates one-image theme creation", () => {
   assert.throws(
     () => parseArguments(["create", "--image", "/tmp/a.png", "--name", "A"]),
     /create requires --image, --name, and --output/,
+  );
+});
+
+test("a local default theme is used by inspect and autostart, while --theme takes precedence", async (context) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "paseo-local-default-test-"));
+  context.after(() => rm(directory, { force: true, recursive: true }));
+  const configurationPath = path.join(directory, "default.json");
+  const customManifest = fileURLToPath(new URL("../site/themes/001.theme.json", import.meta.url));
+  const bundledManifest = fileURLToPath(new URL("../assets/stage-black-gold.theme.json", import.meta.url));
+  await writeFile(configurationPath, JSON.stringify({ manifestPath: customManifest }));
+
+  const cli = await import("../src/cli.mjs");
+  assert.equal((await cli.resolveTheme(parseArguments(["inspect"]), configurationPath)).theme.id, "001");
+  assert.equal(
+    (await cli.resolveTheme(parseArguments(["inspect", "--theme", bundledManifest]), configurationPath)).theme.id,
+    "stage-black-gold",
+  );
+  assert.deepEqual(
+    await cli.resolveAutostartThemeArguments(parseArguments(["autostart", "install"]), configurationPath),
+    ["--theme", customManifest],
   );
 });

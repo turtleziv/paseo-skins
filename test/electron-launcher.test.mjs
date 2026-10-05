@@ -1,7 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildPaseoLaunchEnvironment, mergeElectronFlags } from "../src/electron-launcher.mjs";
+import {
+  buildPaseoLaunchEnvironment,
+  isPaseoApplicationRunning,
+  mergeElectronFlags,
+  resolveDefaultPaseoExecutable,
+} from "../src/electron-launcher.mjs";
+
+test("Windows default Paseo executable follows LOCALAPPDATA", () => {
+  const actual = resolveDefaultPaseoExecutable({
+    platform: "win32",
+    environment: { LOCALAPPDATA: "C:\\Users\\tester\\AppData\\Local" },
+  });
+
+  assert.equal(actual, "C:\\Users\\tester\\AppData\\Local\\Programs\\Paseo\\Paseo.exe");
+});
+
+test("Windows process detection recognizes a running Paseo", async () => {
+  for (const [stdout, expected] of [["2\r\n", true], ["0\r\n", false]]) {
+    const actual = await isPaseoApplicationRunning({
+      platform: "win32",
+      executeFileImplementation: async () => ({ stdout }),
+    });
+    assert.equal(actual, expected);
+  }
+});
 
 test("mergeElectronFlags preserves unrelated flags and owns the local CDP endpoint", () => {
   const result = mergeElectronFlags(

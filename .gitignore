@@ -4,3 +4,4 @@ _site/
 coverage/
 tmp/
 *.log
+.paseo-default-theme.json
