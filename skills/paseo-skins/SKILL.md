@@ -1,21 +1,67 @@
 ---
 name: paseo-skins
-description: Safely browse, create, inspect, install, switch, verify, and remove themes for the Paseo desktop app. Use when a user asks an agent to change Paseo's background, build a theme from an image, apply a Paseo skin, list available themes, diagnose a theme, or restore Paseo's native appearance.
+description: Safely browse, create, inspect, install, switch, verify, and remove themes for Paseo on macOS or the tested Windows fork. Use when a user asks to change Paseo's background, build a theme from an image, apply a skin, list themes, diagnose a theme, or restore its native appearance.
 ---
 
 # Paseo Skins
 
 Use the public theme catalog and the zero-patch CDP loader. Never modify `Paseo.app`, `app.asar`, the Paseo daemon, or agent data.
 
+Choose the host workflow first. The PowerShell workflow below covers Windows x64 with Paseo 0.10.3 on the tested fork branch. The subsequent Bash workflows use the macOS upstream package.
+
 ## Endpoints
 
 - Catalog: `https://huangguang1999.github.io/paseo-skins/catalog.json`
 - Theme v2 schema: `https://huangguang1999.github.io/paseo-skins/schema/paseo-theme-v2.schema.json`
-- Repository: `https://github.com/huangguang1999/paseo-skins`
-- CLI package: `github:huangguang1999/paseo-skins`
+- Upstream repository: `https://github.com/huangguang1999/paseo-skins`
+- Windows fork: `https://github.com/turtleziv/paseo-skins/tree/windows-support`
+- macOS CLI package: `github:huangguang1999/paseo-skins`
+- Windows fork CLI package: `github:turtleziv/paseo-skins#windows-support`
 - Default CDP endpoint: `127.0.0.1:9224`
 
-## Resolve the theme
+## Windows fork workflow
+
+Use PowerShell and Node.js 22 or newer. The tested target is Paseo 0.10.3; check [the fork CI run](https://github.com/turtleziv/paseo-skins/actions/runs/37362302569) for commit `bc6dc7a` before claiming this branch is verified. The GitHub `npx` entry works for one-off commands with public inputs:
+
+```powershell
+$package = 'github:turtleziv/paseo-skins#windows-support'
+npx.cmd --yes $package --help
+```
+
+For user images and a persistent Guardian, reuse a stable local checkout of this branch. If none exists, clone it to a durable path. The Windows task stores absolute CLI and Guardian paths, so npm's disposable `npx` cache is not a persistent install location.
+
+```powershell
+git clone --branch windows-support --single-branch https://github.com/turtleziv/paseo-skins.git 'C:\paseo-skins-windows'
+Set-Location 'C:\paseo-skins-windows'
+npm.cmd ci
+node .\src\cli.mjs doctor --json
+node .\src\cli.mjs status --json
+node .\src\cli.mjs autostart status --json
+```
+
+If the user only requested a package, create and inspect it, then stop. Use the image and output paths the user selected:
+
+```powershell
+node .\src\cli.mjs create --image 'C:\path\to\background.jpg' --name 'My Theme' --id my-theme --output 'C:\path\to\my-theme'
+node .\src\cli.mjs inspect --theme 'C:\path\to\my-theme\my-theme.theme.json'
+```
+
+After the user authorizes persistent application, keep the manifest and image at their absolute paths and install from the same stable checkout. Confirm that `autostart status` does not report a conflicting user setting or task. If Paseo is already running without CDP, let the user finish their work and reopen Paseo normally.
+
+```powershell
+node .\src\cli.mjs autostart install --theme 'C:\path\to\my-theme\my-theme.theme.json' --json
+node .\src\cli.mjs autostart status --json
+```
+
+When Paseo is open with loopback CDP, run `verify` against the exact manifest. Treat the theme as active only when it reports `pass: true`; report the Guardian and watcher states. For a public catalog theme, resolve its ID with `list --json`, then use `node .\src\cli.mjs apply <theme-id> --persist --json` from this same checkout.
+
+```powershell
+node .\src\cli.mjs verify --theme 'C:\path\to\my-theme\my-theme.theme.json' --json
+```
+
+To remove persistence, run `node .\src\cli.mjs autostart uninstall --json` from the checkout that owns it. If Paseo is open with CDP, also run `node .\src\cli.mjs reset --port 9224` to restore its current renderer. Do not force-quit Paseo or interrupt its agents.
+
+## Resolve the theme (macOS)
 
 When the user names a theme, use the read-only catalog command and match its `name` or `id`:
 
@@ -29,7 +75,7 @@ When the user asks what is available, present the catalog themes with their prev
 
 When the user provides a manifest URL directly, accept only HTTPS URLs from a source they trust. The loader itself permits loopback HTTP only for local development.
 
-## Create a theme from an image
+## Create a theme from an image (macOS)
 
 Use this path when the user provides a local PNG, JPEG, or WebP file and asks for a custom theme. Do not publish or submit the image unless the user confirms they have redistribution rights.
 
@@ -51,7 +97,7 @@ npx --yes "$PASEO_SKIN_PACKAGE" inspect \
 
 Use the persistent local-theme flow below after inspection. Never infer redistribution permission from the fact that an image is publicly reachable.
 
-## Apply a public theme persistently
+## Apply a public theme persistently (macOS)
 
 Set the selected catalog identifier and package placeholder:
 
@@ -95,7 +141,7 @@ npx --yes "$PASEO_SKIN_PACKAGE" verify --theme-url '<absolute theme manifest URL
 
 Treat the task as complete only when `verify` reports `pass: true`, unless the command explicitly reports that a normal user-controlled Paseo restart is still required. Report the applied theme, Guardian state, watcher state, and restore commands.
 
-## Persist a local theme
+## Persist a local theme (macOS)
 
 After creating and inspecting a local Theme v2 manifest, install it with:
 
@@ -106,11 +152,11 @@ npx --yes "$PASEO_SKIN_PACKAGE" autostart install \
 
 The local manifest and image must remain at those absolute paths. If Paseo is already running without CDP, ask the user to finish work and reopen it normally before verification.
 
-## Switch themes
+## Switch themes (macOS)
 
 Run the selected catalog theme's `apply <theme-id> --persist` command. A loaded Guardian is reconfigured in place; a manual watcher must be stopped cleanly first.
 
-## Restore native appearance
+## Restore native appearance (macOS)
 
 Restore the native renderer and remove automatic recovery:
 

@@ -70,7 +70,7 @@ npx skills add huangguang1999/paseo-skins --skill paseo-skins -g
 
 ## 环境要求
 
-- macOS 与 `/Applications/Paseo.app`；本地 `windows-support` 分支另有 Windows 试验支持
+- macOS 与 `/Applications/Paseo.app`；公开 fork 的 `windows-support` 分支另有 Windows 试验支持
 - Windows 试验使用当前用户安装的 Paseo 0.10.3 与 `Paseo.exe`
 - Node.js 22 或更高版本
 
@@ -158,16 +158,43 @@ npm run autostart:uninstall
 
 自启代理不会 patch 或重启 Paseo，也不会重启 daemon；它只在登录时注入环境变量并守护皮肤 watcher。生成的文件位于 `~/Library/LaunchAgents/com.paseo-skins.*.plist` 和 `~/.paseo-skin-loader/guardian.mjs`。
 
-## Windows 本地试验分支
+## Windows fork（Paseo 0.10.3）
 
-以下命令只适用于本地检出的 `windows-support` 分支；上面的 `github:huangguang1999/paseo-skins` 和公开 Agent Skill 仍指向上游，不能用它们验证这份尚未发布的 Windows 改动。在 PowerShell 中从仓库根目录运行：
+Windows 改动位于 [`turtleziv/paseo-skins#windows-support`](https://github.com/turtleziv/paseo-skins/tree/windows-support)；[commit `bc6dc7a` 的 CI](https://github.com/turtleziv/paseo-skins/actions/runs/37362302569) 已通过 Windows Node 22／24 和 Node 24 `release:check`。上面的 `github:huangguang1999/paseo-skins` 与网站快捷命令仍指向 macOS 上游。一次性查看 fork CLI 或用已公开的图片生成主题，可以在 PowerShell 中运行：
 
 ```powershell
-npm.cmd run doctor -- --json
-node .\src\cli.mjs autostart install --theme .\assets\stage-black-gold.theme.json --json
-node .\src\cli.mjs autostart status --json
-node .\src\cli.mjs verify --theme .\assets\stage-black-gold.theme.json --json
+$package = 'github:turtleziv/paseo-skins#windows-support'
+npx.cmd --yes $package --help
+npx.cmd --yes $package create --image 'C:\path\to\public-image.jpg' --name 'My Theme' --id my-theme --output 'C:\path\to\my-theme'
 ```
+
+`npx` 会从 GitHub 取得并执行该分支的代码。个人图片可先检视 fork，再从下方固定位置的 clone 执行 `create`。本分支的远端 `npx create` 已用仓库内公开 JPEG 实跑、`inspect` 验证并核对图片 SHA-256；个人温室图片是在本地 clone 中生成和使用，没有随 fork 发布。
+
+持久安装请使用固定位置的 clone：排程会保存 CLI／Guardian 的绝对路径，npm cache 清理后不能保证 `npx` 路径继续存在。已有本分支 clone 的用户从仓库根目录开始；首次使用者先执行：
+
+```powershell
+git clone --branch windows-support --single-branch https://github.com/turtleziv/paseo-skins.git 'C:\paseo-skins-windows'
+Set-Location 'C:\paseo-skins-windows'
+npm.cmd ci
+```
+
+在该目录检查环境、用本地图片制作主题，并明确指定要常驻的清单：
+
+```powershell
+node .\src\cli.mjs doctor --json
+node .\src\cli.mjs create --image 'C:\path\to\background.jpg' --name 'My Theme' --id my-theme --output 'C:\path\to\my-theme'
+node .\src\cli.mjs inspect --theme 'C:\path\to\my-theme\my-theme.theme.json'
+node .\src\cli.mjs autostart status --json
+node .\src\cli.mjs autostart install --theme 'C:\path\to\my-theme\my-theme.theme.json' --json
+```
+
+正常打开 Paseo、确认 CDP 已就绪后验证指定主题：
+
+```powershell
+node .\src\cli.mjs verify --theme 'C:\path\to\my-theme\my-theme.theme.json' --json
+```
+
+`autostart install` 会改变当前用户的环境值并注册登录任务；运行前先确认 `autostart status` 没有不属于本工具的现有设置。若 Paseo 已运行但没有 CDP，等手头工作完成后正常关闭并重新打开，再运行 `verify`。生成后的清单和图片须保留在指定绝对路径。要让这个 clone 的无参数命令也选用本地主题，可在仓库根目录建立下文的 `.paseo-default-theme.json`；该文件不会随 GitHub fork 或 `npx` cache 同步。
 
 Windows 安装只写当前用户的 `PASEO_ELECTRON_FLAGS`，并注册一个当前用户登录时启动的 Task Scheduler Guardian。任务通过 `wscript.exe` 隐藏启动 Node Guardian，避免留下可被误关的黑色控制台窗口；Guardian 异常退出时，启动器会以 1 秒起、最多 60 秒的间隔重试，正常退出码 0 则结束任务。Guardian 等待 `127.0.0.1:9224` 上经过 Paseo target 验证的 CDP，再启动单一 watcher；Paseo 关闭、CDP 消失时会正常停止 watcher，保留 Guardian 等下次启动。配置与事件日志存于 `%USERPROFILE%\.paseo-skin-loader\`。如果原本已有不属于本工具的 `PASEO_ELECTRON_FLAGS` 或同名任务，安装会拒绝覆盖。已经运行而没有 CDP 的 Paseo 不会被中断；完成手头工作后正常关闭并重新打开一次。
 
@@ -180,7 +207,7 @@ node .\src\cli.mjs autostart uninstall --json
 node .\src\cli.mjs reset --port 9224
 ```
 
-这份分支在 Windows Paseo 0.10.3 的隔离实例上验证了任务启动、自动注入、Paseo 重启后的恢复、切换主题、正常停止与卸载。真实用户重启电脑后的登录已触发隐藏任务；Guardian 没有控制台窗口。从 Explorer 打开 Paseo 后，watcher 自动套回指定主题，`verify --theme` 通过；正常关闭 Paseo 后，watcher 停止而 Guardian 继续运行，空闲期间日志未继续增长。正式 Guardian Node 遭外部终止后，隐藏启动器在同一任务中重试，新 Guardian 对隔离 Paseo 再次注入指定主题，`verify --theme` 通过。隔离实例的逐页冷注入巡检通过 21 页和 5 类 hover。Windows CI 配置已加入 fork；各 commit 是否通过 GitHub runner，应以对应的 Actions 结果为准。详情见 `COMPATIBILITY.md`。
+这份分支在 Windows Paseo 0.10.3 的隔离实例上验证了任务启动、自动注入、Paseo 重启后的恢复、切换主题、正常停止与卸载。真实用户重启电脑后的登录已触发隐藏任务；Guardian 没有控制台窗口。从 Explorer 打开 Paseo 后，watcher 自动套回指定主题，`verify --theme` 通过；正常关闭 Paseo 后，watcher 停止而 Guardian 继续运行，空闲期间日志未继续增长。正式 Guardian Node 遭外部终止后，隐藏启动器在同一任务中重试，新 Guardian 对隔离 Paseo 再次注入指定主题，`verify --theme` 通过。加载 CI 全绿版本后又实测了温室主题自动注入与正常关闭。隔离实例的逐页冷注入巡检通过 21 页和 5 类 hover。证据范围与限制见 `COMPATIBILITY.md`。
 
 ## 自定义主题
 
