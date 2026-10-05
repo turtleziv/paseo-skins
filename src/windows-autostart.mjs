@@ -192,12 +192,12 @@ async function readReceipt(receiptPath) {
   }
 }
 
-export async function writeWindowsConfiguration(configurationPath, value) {
-  const temporaryPath = `${configurationPath}.${randomBytes(8).toString("hex")}.bqtmp`;
+async function writeWindowsStateFile(filePath, value) {
+  const temporaryPath = `${filePath}.${randomBytes(8).toString("hex")}.bqtmp`;
   await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      await rename(temporaryPath, configurationPath);
+      await rename(temporaryPath, filePath);
       return;
     } catch (error) {
       if (process.platform !== "win32" || !["EPERM", "EACCES", "EBUSY"].includes(error.code) ||
@@ -205,6 +205,10 @@ export async function writeWindowsConfiguration(configurationPath, value) {
       await delay(10 * (2 ** attempt));
     }
   }
+}
+
+export async function writeWindowsConfiguration(configurationPath, value) {
+  await writeWindowsStateFile(configurationPath, value);
 }
 
 async function appendEvent(stateRoot, event, details = "") {
@@ -401,7 +405,7 @@ export async function uninstallWindowsAutostart({
       installationId: state.configuration.installationId,
       generation: state.configuration.generation,
     };
-    await writeFile(state.files.stopPath, `${JSON.stringify(request)}\n`, { mode: 0o600 });
+    await writeWindowsStateFile(state.files.stopPath, request);
     await appendEvent(stateRoot, "stop-requested", `task=${state.name}`);
     const deadline = Date.now() + stopTimeoutMilliseconds;
     let stopped = false;

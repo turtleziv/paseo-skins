@@ -83,6 +83,7 @@ export async function runWindowsGuardian(configurationPath, {
   const receiptPath = path.join(stateRoot, "windows-guardian.stopped");
   let active = null;
   let lastWaitingReason = null;
+  let incompleteStopRequest = false;
   const log = async (event, details = "") => {
     const configuration = await readConfiguration(configurationPath);
     await appendFile(configuration.logPath,
@@ -116,7 +117,16 @@ export async function runWindowsGuardian(configurationPath, {
       await log("reconfigure", `generation=${configuration.generation}`);
       await stopChild();
     }
-    const request = await readJson(stopPath);
+    let request;
+    try {
+      request = await readJson(stopPath);
+      incompleteStopRequest = false;
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      if (!incompleteStopRequest) await log("stop-request-incomplete");
+      incompleteStopRequest = true;
+      request = null;
+    }
     if (matchesRequest(request, configuration)) {
       await stopChild();
       await writeFile(receiptPath, `${JSON.stringify({

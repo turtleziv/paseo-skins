@@ -80,6 +80,38 @@ test("Guardian waits for Paseo CDP, starts one watcher, and acknowledges a grace
   assert.equal(receipt.generation, current.generation);
 });
 
+test("Guardian keeps running while a stop request is only partly written", async (context) => {
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-guardian-partial-stop-"));
+  context.after(() => rm(stateRoot, { recursive: true, force: true }));
+  const current = configuration(stateRoot);
+  const configurationPath = path.join(stateRoot, "windows-autostart.json");
+  const stopPath = path.join(stateRoot, "windows-guardian.stop");
+  await writeFile(configurationPath, JSON.stringify(current));
+  await writeFile(stopPath, '{"installationId":');
+  const run = runWindowsGuardian(configurationPath, {
+    pollIntervalMilliseconds: 5,
+    cdpReadyImplementation: async () => false,
+  });
+  const outcome = run.then((value) => ({ value }), (error) => ({ error }));
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  await writeFile(stopPath, JSON.stringify({
+    installationId: current.installationId,
+    generation: current.generation,
+  }));
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Guardian did not stop")), 1_000);
+  });
+  let result;
+  try {
+    result = await Promise.race([outcome, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+  assert.deepEqual(result, { value: { stopped: true, childStopped: true } });
+  assert.match(await readFile(current.logPath, "utf8"), /guardian-stop-request-incomplete/);
+});
+
 test("Guardian switches generation through a graceful watcher stop", async (context) => {
   const stateRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-guardian-switch-"));
   context.after(() => rm(stateRoot, { recursive: true, force: true }));
