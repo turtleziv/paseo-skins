@@ -23,6 +23,23 @@ test("Windows process start lookup uses a fixed PowerShell executable and numeri
   assert.equal(calls[0][2].windowsHide, true);
 });
 
+test("Windows process start lookup allows a cold PowerShell startup", async () => {
+  const start = await getProcessStart(4242, {
+    platform: "win32",
+    environment: { SystemRoot: "C:\\Windows" },
+    executeFileImplementation: async (_executable, _arguments, options) => {
+      if (options.timeout < 5_000) {
+        throw Object.assign(new Error("PowerShell startup exceeded the timeout"), {
+          code: "ETIMEDOUT",
+        });
+      }
+      return { stdout: "123456789\r\n" };
+    },
+  });
+
+  assert.equal(start, "123456789");
+});
+
 test("Windows process start lookup rejects nonnumeric PIDs before invoking PowerShell", async () => {
   let invoked = false;
   const start = await getProcessStart("1; Write-Output injected", {

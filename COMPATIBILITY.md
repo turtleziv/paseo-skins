@@ -30,4 +30,4 @@ Paseo Skins 通过运行时 DOM 与 CDP target 能力判断兼容性，不只比
 4. 停止 watcher，运行 `paseo-skin reset`，确认原生 UI 恢复。
 5. 只有上述证据全部通过，才更新本表的版本和日期。
 
-Windows 证据仅适用于尚未发布的本地 `windows-support` 分支和 Paseo 0.10.3。独立任务中，Task Scheduler 的 `RestartOnFailure` 设置没有在非零退出后触发重启；本分支改由隐藏启动器在 Node 非零退出后重试，并已在正式 Guardian Node 遭外部终止后验证。逐页冷注入已在隔离的双 workspace profile 上验证，详见 `docs/RENDERER_STYLE_SAFETY.md`。Windows CI matrix 已加入本地分支，但 GitHub runner 尚未实际执行；隐藏启动器或排程本身遭外部终止后的恢复未验证。公开上游包与 Agent Skill 仍是 macOS 版本。Linux 和 Intel Mac 当前均未声明支持；新增平台必须提供真实设备证据和对应 CI/恢复测试。
+Windows 证据仅适用于 fork 的 `windows-support` 分支和 Paseo 0.10.3。独立任务中，Task Scheduler 的 `RestartOnFailure` 设置没有在非零退出后触发重启；本分支改由隐藏启动器在 Node 非零退出后重试，并已在正式 Guardian Node 遭外部终止后验证。逐页冷注入已在隔离的双 workspace profile 上验证，详见 `docs/RENDERER_STYLE_SAFETY.md`。Windows CI matrix 已加入；各 commit 的实际通过状态必须查对应的 GitHub Actions 结果，本机测试不能代替云端收据。隐藏启动器或排程本身遭外部终止后的恢复未验证。公开上游包与 Agent Skill 仍是 macOS 版本。Linux 和 Intel Mac 当前均未声明支持；新增平台必须提供真实设备证据和对应 CI/恢复测试。

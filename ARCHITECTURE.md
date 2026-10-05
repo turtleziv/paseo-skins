@@ -68,7 +68,7 @@ local/remote manifest ──► theme-loader ──► validated theme + verifie
 ## Intentional non-goals
 
 - No modification of `app.asar`, code signatures, Paseo daemon data, or Agent data.
-- Platform claims must be scoped to the verified host, Paseo version, and published artifact. The local Windows branch has Paseo 0.10.3 and reboot-login evidence for the hidden task. External termination of its Guardian Node child was followed by a launcher retry and verified theme injection into isolated Paseo. GitHub Windows CI and recovery after external termination of the launcher or task remain unverified; Linux and Intel Mac have no real-device evidence.
+- Platform claims must be scoped to the verified host, Paseo version, and published artifact. The Windows fork has Paseo 0.10.3 and reboot-login evidence for the hidden task. External termination of its Guardian Node child was followed by a launcher retry and verified theme injection into isolated Paseo. A passing GitHub Windows CI run for the claimed commit is required; recovery after external termination of the launcher or task remains unverified. Linux and Intel Mac have no real-device evidence.
 - No desktop theme manager until a browser plus CLI demonstrably cannot cover the required workflow.
 - No generic plugin abstraction until at least two real consumers need the same extension boundary.
 

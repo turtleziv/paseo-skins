@@ -30,7 +30,7 @@ export async function getProcessStart(processIdentifier, {
         "-NonInteractive",
         "-Command",
         `$process = Get-Process -Id ${processIdentifier} -ErrorAction Stop; $process.StartTime.ToUniversalTime().Ticks`,
-      ], { timeout: 2_000, windowsHide: true });
+      ], { timeout: 10_000, windowsHide: true });
       const ticks = stdout.trim();
       return /^\d+$/.test(ticks) ? ticks : null;
     }

@@ -180,7 +180,7 @@ node .\src\cli.mjs autostart uninstall --json
 node .\src\cli.mjs reset --port 9224
 ```
 
-这份分支在 Windows Paseo 0.10.3 的隔离实例上验证了任务启动、自动注入、Paseo 重启后的恢复、切换主题、正常停止与卸载。真实用户重启电脑后的登录已触发隐藏任务；Guardian 没有控制台窗口。从 Explorer 打开 Paseo 后，watcher 自动套回指定主题，`verify --theme` 通过；正常关闭 Paseo 后，watcher 停止而 Guardian 继续运行，空闲期间日志未继续增长。正式 Guardian Node 遭外部终止后，隐藏启动器在同一任务中重试，新 Guardian 对隔离 Paseo 再次注入指定主题，`verify --theme` 通过。隔离实例的逐页冷注入巡检通过 21 页和 5 类 hover；Windows CI 配置已加入本地分支，尚未在 GitHub runner 执行。详情见 `COMPATIBILITY.md`。
+这份分支在 Windows Paseo 0.10.3 的隔离实例上验证了任务启动、自动注入、Paseo 重启后的恢复、切换主题、正常停止与卸载。真实用户重启电脑后的登录已触发隐藏任务；Guardian 没有控制台窗口。从 Explorer 打开 Paseo 后，watcher 自动套回指定主题，`verify --theme` 通过；正常关闭 Paseo 后，watcher 停止而 Guardian 继续运行，空闲期间日志未继续增长。正式 Guardian Node 遭外部终止后，隐藏启动器在同一任务中重试，新 Guardian 对隔离 Paseo 再次注入指定主题，`verify --theme` 通过。隔离实例的逐页冷注入巡检通过 21 页和 5 类 hover。Windows CI 配置已加入 fork；各 commit 是否通过 GitHub runner，应以对应的 Actions 结果为准。详情见 `COMPATIBILITY.md`。
 
 ## 自定义主题
 
