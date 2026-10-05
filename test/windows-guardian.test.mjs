@@ -120,9 +120,17 @@ test("Guardian switches generation through a graceful watcher stop", async (cont
   const configurationPath = path.join(stateRoot, "windows-autostart.json");
   await writeFile(configurationPath, JSON.stringify(initial));
   let starts = 0;
+  let pauseNextReadyCheck = false;
+  let resumeReadyCheck = null;
   const run = runWindowsGuardian(configurationPath, {
     pollIntervalMilliseconds: 5,
-    cdpReadyImplementation: async () => true,
+    cdpReadyImplementation: async () => {
+      if (pauseNextReadyCheck) {
+        pauseNextReadyCheck = false;
+        await new Promise((resolve) => { resumeReadyCheck = resolve; });
+      }
+      return true;
+    },
     watcherLockImplementation: async () => ({ active: false }),
     spawnWatcherImplementation: () => {
       starts += 1;
@@ -132,10 +140,15 @@ test("Guardian switches generation through a graceful watcher stop", async (cont
   let current = initial;
   try {
     await waitUntil(() => starts === 1);
+    pauseNextReadyCheck = true;
+    await waitUntil(() => resumeReadyCheck !== null);
     await writeWindowsConfiguration(configurationPath, replacement);
     current = replacement;
+    resumeReadyCheck();
+    resumeReadyCheck = null;
     await waitUntil(() => starts === 2);
   } finally {
+    resumeReadyCheck?.();
     await writeFile(path.join(stateRoot, "windows-guardian.stop"), JSON.stringify({
       installationId: current.installationId,
       generation: current.generation,
