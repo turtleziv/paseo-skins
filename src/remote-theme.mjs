@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -138,8 +138,21 @@ export async function loadRemoteTheme(
     try {
       await rename(temporaryDirectory, finalDirectory);
     } catch (error) {
-      if (error.code !== "EEXIST" && error.code !== "ENOTEMPTY") {
+      if (!["EEXIST", "ENOTEMPTY", "EPERM"].includes(error.code)) {
         throw error;
+      }
+      let existingManifestBytes;
+      let existingImageBytes;
+      try {
+        [existingManifestBytes, existingImageBytes] = await Promise.all([
+          readFile(path.join(finalDirectory, manifestFileName)),
+          readFile(path.join(finalDirectory, theme.image)),
+        ]);
+      } catch {
+        throw error;
+      }
+      if (!existingManifestBytes.equals(manifestBytes) || !existingImageBytes.equals(imageBytes)) {
+        throw new Error("Cached remote theme differs from the downloaded theme");
       }
       await rm(temporaryDirectory, { force: true, recursive: true });
     }

@@ -52,7 +52,7 @@ test("loadRemoteTheme rejects a cross-origin HTTPS redirect", async () => {
   );
 });
 
-test("loadRemoteTheme downloads, validates, and caches a theme", async (context) => {
+test("loadRemoteTheme reuses an already cached theme", async (context) => {
   const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-skin-cache-"));
   context.after(() => rm(cacheRoot, { force: true, recursive: true }));
   const [manifestBytes, imageBytes] = await Promise.all([
@@ -87,4 +87,10 @@ test("loadRemoteTheme downloads, validates, and caches a theme", async (context)
   assert.deepEqual(cacheSegments.slice(-4, -2), ["stage-black-gold", "1.0.0"]);
   assert.match(cacheSegments.at(-2), /^[a-f0-9]{16}$/);
   assert.match(loadedTheme.sourceUrl, /^http:\/\/127\.0\.0\.1:/);
+
+  const loadedAgain = await loadRemoteTheme(
+    `http://127.0.0.1:${address.port}/themes/stage-black-gold.theme.json`,
+    { cacheRoot },
+  );
+  assert.equal(loadedAgain.manifestPath, loadedTheme.manifestPath);
 });
