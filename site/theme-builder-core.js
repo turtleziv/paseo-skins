@@ -12,6 +12,25 @@ export function quoteShellArgument(value) {
   return `'${String(value).replaceAll("'", `'"'"'`)}'`;
 }
 
+export function detectCliPlatform(browserPlatform) {
+  return /^win/i.test(String(browserPlatform)) ? "windows" : "macos";
+}
+
+export function buildCliCreateCommand({ platform, image, name, id }) {
+  if (platform !== "windows" && platform !== "macos") throw new Error(`Unsupported CLI platform: ${platform}`);
+  const windows = platform === "windows";
+  const quote = windows
+    ? (value) => `'${String(value).replaceAll("'", "''")}'`
+    : quoteShellArgument;
+  return [
+    `${windows ? "npx.cmd" : "npx"} --yes github:huangguang1999/paseo-skins create`,
+    `--image ${quote(windows ? `C:\\path\\to\\${image}` : `/absolute/path/${image}`)}`,
+    `--name ${quote(name)}`,
+    `--id ${quote(id)}`,
+    `--output ${quote(windows ? `.\\${id}` : `./${id}`)}`,
+  ].join(" ");
+}
+
 export function resolveThemeAppearance(appearance, background) {
   if (appearance === "dark" || appearance === "light") return appearance;
   const match = String(background).match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);

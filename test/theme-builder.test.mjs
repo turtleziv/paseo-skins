@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildBrowserThemeManifest, quoteShellArgument, sha256Hex } from "../site/theme-builder-core.js";
+import * as studioBuilder from "../site/theme-builder-core.js";
+const { buildBrowserThemeManifest, quoteShellArgument, sha256Hex } = studioBuilder;
 import { validateThemeManifest } from "../src/theme-loader.mjs";
 
 test("browser builder emits a loader-compatible integrity manifest", async () => {
@@ -63,4 +64,38 @@ test("browser builder resolves auto appearance from the background color", () =>
 
 test("browser builder shell-quotes user-controlled names", () => {
   assert.equal(quoteShellArgument("Mira's night"), `'Mira'"'"'s night'`);
+});
+
+test("Studio creates a Windows PowerShell command for the upstream package", () => {
+  assert.equal(studioBuilder.buildCliCreateCommand?.({
+    platform: "windows",
+    image: "Mira's night.JPG",
+    name: "Mira's night",
+    id: "mira-night",
+  }), String.raw`npx.cmd --yes github:huangguang1999/paseo-skins create --image 'C:\path\to\Mira''s night.JPG' --name 'Mira''s night' --id 'mira-night' --output '.\mira-night'`);
+});
+
+test("Studio retains the macOS command and Unix shell quoting", () => {
+  assert.equal(studioBuilder.buildCliCreateCommand({
+    platform: "macos",
+    image: "forest.webp",
+    name: "Mira's night",
+    id: "mira-night",
+  }), `npx --yes github:huangguang1999/paseo-skins create --image '/absolute/path/forest.webp' --name 'Mira'"'"'s night' --id 'mira-night' --output './mira-night'`);
+});
+
+test("Studio offers Windows WebP palette sampling", () => {
+  assert.equal(studioBuilder.buildCliCreateCommand({
+    platform: "windows",
+    image: "background.WEBP",
+    name: "WebP art",
+    id: "webp-art",
+  }), String.raw`npx.cmd --yes github:huangguang1999/paseo-skins create --image 'C:\path\to\background.WEBP' --name 'WebP art' --id 'webp-art' --output '.\webp-art'`);
+});
+
+test("Studio defaults its command platform from the browser OS", () => {
+  assert.equal(studioBuilder.detectCliPlatform?.("Windows"), "windows");
+  assert.equal(studioBuilder.detectCliPlatform?.("Win32"), "windows");
+  assert.equal(studioBuilder.detectCliPlatform?.("MacIntel"), "macos");
+  assert.equal(studioBuilder.detectCliPlatform?.("unknown"), "macos");
 });

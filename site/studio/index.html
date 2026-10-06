@@ -55,7 +55,7 @@
           <div id="manifest-pane" class="studio-pane" role="tabpanel" hidden><pre id="builder-manifest" class="manifest-preview">正在生成…</pre></div>
           <div id="export-pane" class="studio-pane" role="tabpanel" hidden>
             <div class="export-card"><h3>导出 Theme v2</h3><p>下载完整性可验证的 theme.json。新主题需与原图放在同一目录。</p><p id="export-status" class="builder-status" role="status" aria-live="polite"></p><div class="studio-actions"><button id="builder-download" class="button primary-button" type="button" disabled>下载 theme.json</button><button id="builder-copy-manifest" class="button secondary-button" type="button" disabled>复制 JSON</button><button id="builder-download-css" class="button secondary-button" type="button">下载 Safe CSS</button></div></div>
-            <div class="export-card"><h3>用 CLI 本地创建</h3><p>CLI 会读取原图、自动取色并在输出目录生成主题包。</p><div class="command-box"><code id="builder-cli-command"></code><button id="builder-copy-cli" type="button">复制</button></div></div>
+            <div class="export-card"><h3>用 CLI 本地创建</h3><p>CLI 会读取原图、重新取色并在输出目录生成主题包，不会带入本页调整的配色。若要保留本页配色，请下载上方的 theme.json，并与原图放在同一目录。</p><label class="control-label" for="builder-cli-platform">命令平台</label><select id="builder-cli-platform" class="form-control"><option value="macos">macOS · Terminal</option><option value="windows">Windows · PowerShell</option></select><p>复制后请将图片路径替换为本机原图的完整路径。</p><div class="command-box"><code id="builder-cli-command"></code><button id="builder-copy-cli" type="button">复制</button></div></div>
             <div class="export-card"><h3>发布前检查</h3><p>运行 <code>inspect</code> 检查清单和图片完整性，再用 <code>verify</code> 验证真实 Paseo 布局。</p></div>
           </div>
         </section>

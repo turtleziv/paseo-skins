@@ -109,15 +109,23 @@ export function buildThemeManifest({
 }
 
 async function sampleImagePalette(imageBytes, mediaType) {
+  if (process.platform === "win32" && mediaType === "image/webp") {
+    const { default: sharp } = await import("sharp");
+    const { data, info } = await sharp(imageBytes, { limitInputPixels: 50_000_000 })
+      .resize(96, 96, { fit: "inside", withoutEnlargement: true })
+      .flatten({ background: "#000000" })
+      .toColourspace("srgb")
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    if (info.channels !== 3) throw new Error("WebP palette sampler expected RGB pixels");
+    return deriveThemeColors(data);
+  }
   const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "paseo-theme-create-"));
   const inputPath = path.join(temporaryDirectory, `source${mediaTypeExtension(mediaType)}`);
   const bitmapPath = path.join(temporaryDirectory, "sample.bmp");
   try {
     await writeFile(inputPath, imageBytes, { mode: 0o600 });
     if (process.platform === "win32") {
-      if (mediaType === "image/webp") {
-        throw new Error("Windows palette sampling supports JPEG and PNG images; WebP needs a separate decoder");
-      }
       const script = `
         Add-Type -AssemblyName System.Drawing
         $source = [System.Drawing.Image]::FromFile($env:PASEO_SAMPLE_INPUT)

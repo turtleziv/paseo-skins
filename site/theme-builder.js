@@ -1,7 +1,8 @@
 import { deriveThemeColors, slugifyThemeIdentifier } from "../shared/theme-palette.mjs";
 import {
   buildBrowserThemeManifest,
-  quoteShellArgument,
+  buildCliCreateCommand,
+  detectCliPlatform,
   resolveThemeAppearance,
   sha256Hex,
 } from "./theme-builder-core.js";
@@ -12,6 +13,7 @@ const elements = {
   accent: document.querySelector("#builder-accent"),
   appearance: document.querySelector("#builder-appearance"),
   cliCommand: document.querySelector("#builder-cli-command"),
+  cliPlatform: document.querySelector("#builder-cli-platform"),
   copyCli: document.querySelector("#builder-copy-cli"),
   copyManifest: document.querySelector("#builder-copy-manifest"),
   css: document.querySelector("#builder-css"),
@@ -152,6 +154,17 @@ function renderPalette(colors) {
   ].map(([label, color]) => `<div title="${label} ${color}" style="background:${color}">${label}</div>`).join("");
 }
 
+function renderCliCommand(manifest) {
+  const command = buildCliCreateCommand({
+    platform: elements.cliPlatform.value,
+    image: manifest.image,
+    name: manifest.name || "我的主题",
+    id: manifest.id || "my-theme",
+  });
+  elements.cliCommand.textContent = command;
+  elements.copyCli.disabled = false;
+}
+
 async function render() {
   elements.focusXValue.textContent = `${Math.round(Number(elements.focusX.value) * 100)}%`;
   elements.focusYValue.textContent = `${Math.round(Number(elements.focusY.value) * 100)}%`;
@@ -168,14 +181,7 @@ async function render() {
     elements.exportStatus.textContent = "主题清单已就绪，可以复制或下载。";
   }
   renderPalette(manifest.colors);
-  const themeIdentifier = manifest.id || "my-theme";
-  elements.cliCommand.textContent = [
-    "npx --yes github:huangguang1999/paseo-skins create",
-    `--image ${quoteShellArgument(`/absolute/path/${manifest.image}`)}`,
-    `--name ${quoteShellArgument(manifest.name || "我的主题")}`,
-    `--id ${quoteShellArgument(themeIdentifier)}`,
-    `--output ${quoteShellArgument(`./${themeIdentifier}`)}`,
-  ].join(" ");
+  renderCliCommand(manifest);
   await state.simulator.setCustomTheme({
     manifest,
     previewUrl: state.objectUrl ?? state.previewUrl,
@@ -313,6 +319,9 @@ elements.copyManifest.addEventListener("click", () => {
   if (isManifestReady()) copyWithFeedback(elements.manifest.textContent, "theme.json 已复制");
 });
 elements.copyCli.addEventListener("click", () => copyWithFeedback(elements.cliCommand.textContent, "CLI 命令已复制"));
+elements.cliPlatform.addEventListener("change", () => {
+  if (state.baseManifest) renderCliCommand(buildCurrentManifest());
+});
 elements.downloadCss.addEventListener("click", () => { try { validateSafeCss(); downloadBlob(`${elements.css.value}\n`, `${elements.identifier.value || "paseo-theme"}.safe.css`, "text/css"); } catch (error) { elements.cssStatus.textContent = `验证失败：${error.message}`; } });
 elements.download.addEventListener("click", () => {
   if (!isManifestReady()) return;
@@ -322,6 +331,7 @@ elements.download.addEventListener("click", () => {
 });
 
 const themeIdentifier = new URLSearchParams(location.search).get("theme") ?? "morning-mist";
+elements.cliPlatform.value = detectCliPlatform(navigator.userAgentData?.platform ?? navigator.platform);
 const loaded = await loadTheme(themeIdentifier, { fallbackToFirst: true });
 if (loaded.fallbackUsed) {
   const url = new URL(window.location.href);

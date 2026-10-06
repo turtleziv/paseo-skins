@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -92,4 +92,23 @@ test("createThemeFromImage samples a JPEG on Windows without an injected palette
   assert.equal(loaded.theme.id, "windows-sampled-jpeg");
   assert.match(loaded.theme.colors.accent, /^#[0-9a-f]{6}$/);
   assert.equal(loaded.theme.integrity.sha256, created.manifest.integrity.sha256);
+});
+
+test("createThemeFromImage samples a real WebP on Windows and keeps its original bytes", {
+  skip: process.platform !== "win32",
+}, async (context) => {
+  const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "paseo-theme-webp-test-"));
+  context.after(() => rm(outputDirectory, { force: true, recursive: true }));
+  const imagePath = new URL("../site/themes/twin-iris-storm.webp", import.meta.url);
+  const created = await createThemeFromImage({
+    identifier: "windows-sampled-webp",
+    imagePath,
+    name: "Windows WebP",
+    outputDirectory,
+  });
+  const loaded = await loadTheme(created.manifestOutputPath);
+  assert.equal(loaded.theme.id, "windows-sampled-webp");
+  assert.match(loaded.theme.colors.accent, /^#[0-9a-f]{6}$/);
+  assert.equal(loaded.theme.integrity.sha256, created.manifest.integrity.sha256);
+  assert.deepEqual(await readFile(created.imageOutputPath), await readFile(imagePath));
 });

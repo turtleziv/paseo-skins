@@ -27,7 +27,7 @@
 - watcher 覆盖当前窗口、reload 和后续新窗口；停止时注销 reload hook，同一端口只允许一个 watcher。
 - `pause` / `reset` 可恢复根节点、样式、overlay 和动态内联样式。
 - Theme v2 提供公开 JSON Schema；加载前校验图片类型、SHA-256、字节数、尺寸和像素数。
-- 一张本地图片即可自动取色并生成完整性可验证的主题；macOS CLI 支持 PNG、JPEG、WebP，Windows CLI 的自动取色支持 PNG、JPEG。浏览器端不会上传图片。
+- 一张本地图片即可自动取色并生成完整性可验证的主题；macOS 与 Windows CLI 均支持 PNG、JPEG、WebP。浏览器端不会上传图片。
 - 每套公开主题都提供 Paseo ZIP 直下；浏览器点击后只拉取该主题的清单与原图，校验 SHA-256 并在本地生成包含 Theme v2、未经修改原图和来源说明的 ZIP，解压后即可离线校验、应用。
 - 支持通过 `--theme-url` 安装远程主题；只接受 HTTPS 同目录 JSON 与图片，不执行远程脚本。
 - `doctor` 提供只读环境诊断，`verify` 检查根节点可见性、overlay 安全和横向溢出。
@@ -246,7 +246,7 @@ npm start -- --theme "$PWD/assets/stage-black-gold.theme.json"
 npm run doctor -- --theme-url 'https://example.com/themes/my-theme.theme.json'
 ```
 
-主题格式、字段范围和图片限制见 [Theme v2 格式](docs/THEME_FORMAT.md) 与公开 [JSON Schema](schema/paseo-theme-v2.schema.json)。主题加载支持 PNG、JPEG、WebP；Windows CLI 自动取色暂只支持 PNG、JPEG。单图不超过 16 MB、单边不超过 16384 px、总像素不超过 5000 万。建议使用 16:9 横图，并让主体避开左侧导航区域。公开投稿还需在 [ASSET_PROVENANCE.md](ASSET_PROVENANCE.md) 登记作者、来源和许可证。
+主题格式、字段范围和图片限制见 [Theme v2 格式](docs/THEME_FORMAT.md) 与公开 [JSON Schema](schema/paseo-theme-v2.schema.json)。主题加载和 macOS／Windows CLI 自动取色均支持 PNG、JPEG、WebP。Windows 的 WebP 取色由随 CLI 安装的 `sharp` 解码，主题包内仍保存原始图片。单图不超过 16 MB、单边不超过 16384 px、总像素不超过 5000 万。建议使用 16:9 横图，并让主体避开左侧导航区域。公开投稿还需在 [ASSET_PROVENANCE.md](ASSET_PROVENANCE.md) 登记作者、来源和许可证。
 
 ## 工作原理
 
