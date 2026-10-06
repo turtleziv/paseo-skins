@@ -41,7 +41,7 @@ test("homepage exposes canonical, social, and software metadata", async () => {
   const [structuredData] = extractJsonLd(html);
   const software = structuredData["@graph"].find((entry) => entry["@type"] === "SoftwareApplication");
   assert.equal(software.name, "Paseo Skins");
-  assert.equal(software.operatingSystem, "macOS");
+  assert.equal(software.operatingSystem, "macOS, Windows");
   assert.equal(software.offers.price, "0");
 });
 

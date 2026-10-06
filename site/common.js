@@ -1,5 +1,6 @@
 const catalogUrl = new URL("./catalog.json", import.meta.url);
 export const INSTALLER_PACKAGE = "github:huangguang1999/paseo-skins";
+const CHECKOUT_URL = "https://github.com/huangguang1999/paseo-skins.git";
 
 let catalogPromise;
 
@@ -42,8 +43,24 @@ export async function loadTheme(themeIdentifier, options = {}) {
   return { ...resolution, manifest: await response.json() };
 }
 
-export function getApplyCommand(themeIdentifier) {
-  return `npx --yes ${INSTALLER_PACKAGE} apply ${themeIdentifier} --persist`;
+export function detectCommandPlatform() {
+  const platform = globalThis.navigator?.userAgentData?.platform
+    ?? globalThis.navigator?.platform
+    ?? "";
+  return /win/i.test(platform) ? "windows" : "macos";
+}
+
+export function getApplyCommand(themeIdentifier, platform = detectCommandPlatform()) {
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(themeIdentifier)) {
+    throw new Error("主题 ID 只能包含小写字母、数字和连字符");
+  }
+  if (platform === "windows") {
+    return `$p=Join-Path $HOME 'paseo-skins'; if (!(Test-Path $p)) { git clone ${CHECKOUT_URL} $p; if ($LASTEXITCODE) { throw 'Clone failed' } }; if (!(Test-Path (Join-Path $p '.git'))) { throw 'Existing path is not a checkout' }; if ((git -C $p remote get-url origin) -ne '${CHECKOUT_URL}') { throw 'Unexpected checkout origin' }; npm.cmd ci --prefix $p; if ($LASTEXITCODE) { throw 'Install failed' }; node (Join-Path $p 'src/cli.mjs') apply ${themeIdentifier} --persist`;
+  }
+  if (platform === "macos") {
+    return `p="$HOME/paseo-skins"; { [ -d "$p/.git" ] || { [ ! -e "$p" ] && git clone ${CHECKOUT_URL} "$p"; }; } && [ "$(git -C "$p" remote get-url origin)" = "${CHECKOUT_URL}" ] && npm ci --prefix "$p" && node "$p/src/cli.mjs" apply ${themeIdentifier} --persist`;
+  }
+  throw new Error(`不支持的命令平台：${platform}`);
 }
 
 export async function copyText(value) {

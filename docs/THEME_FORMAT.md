@@ -27,7 +27,7 @@ paseo-skin inspect \
   --theme '/absolute/path/mountain-night/mountain-night.theme.json'
 ```
 
-`create` 会用 macOS `sips` 在临时目录生成 96 px 缩样，自动提取主色，不修改原图；最终清单记录图片 SHA-256、字节数和像素尺寸。
+`create` 在 macOS 使用系统 `sips`，在 Windows 使用系统图像接口处理 PNG／JPEG，并由 `sharp` 解码 WebP 供自动取色。缩样在临时目录生成，不修改原图；最终清单记录图片 SHA-256、字节数和像素尺寸。Windows PowerShell 可把上述 `paseo-skin` 换为固定 checkout 的 `node .\src\cli.mjs`，并使用完整的本地 Windows 路径。
 
 ## v2 示例
 

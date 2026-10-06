@@ -61,7 +61,8 @@
       <div class="dialog-inner">
         <p class="eyebrow">ONE-COMMAND APPLY</p>
         <h2 id="apply-title">应用主题</h2>
-        <p>复制命令到终端。CLI 会校验清单、图片哈希和本机回环 CDP，并安装持久 Guardian；关闭终端、退出 Paseo 或重启电脑后都会自动恢复。</p>
+        <p>选择系统后复制命令到对应终端。首次使用会在用户目录建立固定 checkout；CLI 校验主题并安装持久 Guardian。</p>
+        <label class="command-platform" for="apply-platform">选择平台 <select id="apply-platform"><option value="windows">Windows · PowerShell</option><option value="macos">macOS · Terminal</option></select></label>
         <div class="command-box"><code id="apply-command"></code><button id="copy-command" type="button">复制</button></div>
         <div class="dialog-actions"><button id="close-apply-dialog" class="button secondary-button" type="button">关闭</button><a class="button primary-button" href="../download/">查看 CLI 指南</a></div>
       </div>

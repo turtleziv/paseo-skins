@@ -21,9 +21,12 @@
         <nav class="docs-toc" aria-label="文档目录"><a href="#quick-start">快速开始</a><a href="#theme-format">Theme v2</a><a href="#image">图片约束</a><a href="#safe-css">Safe CSS</a><a href="#package">主题包</a><a href="#safety">安全边界</a></nav>
         <article class="docs-content">
           <h2 id="quick-start">快速开始</h2>
-          <p>在主题库中选择一款主题，进入模拟器检查首页、任务页、侧栏与窄窗口，然后复制一键换肤命令：</p>
-          <pre><code>npx --yes github:huangguang1999/paseo-skins apply morning-mist --persist</code></pre>
-          <p>第一次运行时，CLI 会读取公开 catalog、校验同源主题清单、下载图片并核对 SHA-256，再安装当前用户的持久 Guardian。关闭终端、退出 Paseo 或重启电脑后，主题都会自动恢复。若 Paseo 正在运行但没有开启本机 CDP，CLI 会要求你在工作完成后正常退出并重新打开，不会强制重启正在工作的 Agent。</p>
+          <p>在主题库中选择一款主题，检查模拟器后到 <a href="../download/">CLI 页面</a> 选择 Windows PowerShell 或 macOS Terminal，再复制该平台的命令。持久安装从用户目录中固定的 <code>paseo-skins</code> checkout 执行；请保留这个目录。Node.js 22+ 与 Git 必须先安装。</p>
+          <p>CLI 会读取公开 catalog、校验同源主题清单与图片 SHA-256，再安装当前用户的持久 Guardian。Windows 使用登录任务，macOS 使用 LaunchAgents。关闭终端、退出 Paseo 或重启电脑后，主题会自动恢复。若 Paseo 正在运行但没有开启本机 CDP，请在工作完成后正常退出并重新打开；CLI 不会强制重启正在工作的 Agent。</p>
+          <h3>一次性命令</h3><p>只要制作、列出或检查主题，可以使用 GitHub CLI 入口；这些命令不会安装持久 Guardian。Windows PowerShell 使用 <code>npx.cmd</code>，macOS Terminal 使用 <code>npx</code>。</p>
+          <p>Windows PowerShell：</p><pre><code>npx.cmd --yes github:huangguang1999/paseo-skins list --json</code></pre>
+          <p>macOS Terminal：</p><pre><code>npx --yes github:huangguang1999/paseo-skins list --json</code></pre>
+          <h3>移除常驻</h3><p>从安装时的固定 checkout 执行 <code>autostart uninstall</code>，如 Paseo 已开启 CDP，再执行 <code>reset</code> 恢复当前窗口。不需要退出 Paseo。</p>
           <div class="docs-callout"><b>没有桌面客户端。</b><p>本项目刻意只提供静态网站与开源 CLI。网页负责浏览和制作，CLI 负责本机换肤，两者职责清晰。</p></div>
 
           <h2 id="theme-format">Theme v2</h2>
@@ -53,14 +56,14 @@
 }</code></pre>
 
           <h2 id="package">主题包</h2>
-          <p>最小主题包由 JSON 清单和同目录图片组成。公开主题库会把 Paseo Theme v2 清单、未经修改的 DreamSkin 原背景图和来源说明打成 ZIP 供直接下载。来源说明保留原作者、许可证、下载地址、原包 SHA-256 与原图 SHA-256；上游 CSS 和脚本不会进入适配包。CLI 的 <code>inspect</code> 可以离线验证，<code>verify</code> 用真实 renderer 检查主题生命周期和布局安全。</p>
+          <p>最小主题包由 JSON 清单和同目录图片组成。公开主题库会把 Paseo Theme v2 清单、未经修改的 DreamSkin 原背景图和来源说明打成 ZIP 供直接下载。先解压 ZIP，再把 <code>--theme</code> 指向解压出的 <code>.theme.json</code>；CLI 不直接读取 ZIP。来源说明保留原作者、许可证、下载地址、原包 SHA-256 与原图 SHA-256；上游 CSS 和脚本不会进入适配包。CLI 的 <code>inspect</code> 可以离线验证，<code>verify</code> 用真实 renderer 检查主题生命周期和布局安全。</p>
           <pre><code>my-theme/
 ├── my-theme.theme.json
 ├── background.webp
 └── README.txt</code></pre>
 
           <h2 id="safety">安全边界</h2>
-          <ul><li>不 patch <code>Paseo.app</code>、<code>app.asar</code>、daemon 或 Agent 数据。</li><li>CDP 只监听 <code>127.0.0.1</code>，不得转发到局域网或公网。</li><li>远程主题必须使用 HTTPS，清单与图片必须同源，不执行远程 JavaScript。</li><li><code>pause</code> / <code>reset</code> 会销毁 observer、overlay、style 与动态内联样式。</li><li>同一端口只允许一个 watcher，避免重复注入。</li></ul>
+          <ul><li>不 patch <code>Paseo.app</code>、<code>Paseo.exe</code>、<code>app.asar</code>、daemon 或 Agent 数据。</li><li>CDP 只监听 <code>127.0.0.1</code>，不得转发到局域网或公网。</li><li>远程主题必须使用 HTTPS，清单与图片必须同源，不执行远程 JavaScript。</li><li><code>pause</code> / <code>reset</code> 会销毁 observer、overlay、style 与动态内联样式。</li><li>同一端口只允许一个 watcher，避免重复注入。</li></ul>
         </article>
       </div>
     </main>

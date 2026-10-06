@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createThemePackage } from "./theme-package.mjs";
+import { getApplyCommand } from "../site/common.js";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const sourceRoot = path.join(repositoryRoot, "site");
@@ -52,7 +53,7 @@ function renderThemePage(theme) {
   const manifestUrl = new URL(theme.manifest, baseUrl).href;
   assertThemePackagePath(theme);
   const description = `${theme.description} 可下载的 Paseo 桌面主题适配，支持 Agent Skill 一键接入与安全 CDP 注入。`;
-  const installCommand = `npx --yes github:huangguang1999/paseo-skins apply ${theme.id} --persist`;
+  const installCommand = getApplyCommand(theme.id, "macos");
   const hasDistinctEnglishName = theme.englishName.trim().toLocaleLowerCase()
     !== theme.name.trim().toLocaleLowerCase();
   const displayName = hasDistinctEnglishName
@@ -119,10 +120,16 @@ function renderThemePage(theme) {
     <script type="application/ld+json">${jsonLd(structuredData)}</script>
     <link rel="stylesheet" href="../../styles.css" />
     <script type="module">
-      import { copyWithFeedback, showToast } from "../../common.js";
+      import { copyWithFeedback, detectCommandPlatform, getApplyCommand, showToast } from "../../common.js";
       import { downloadThemePackage } from "../../theme-package-browser.js";
+      const platformSelect = document.querySelector("#theme-platform");
+      const command = document.querySelector("#theme-command");
+      platformSelect.value = detectCommandPlatform();
+      const updateCommand = () => { command.textContent = getApplyCommand(${JSON.stringify(theme.id)}, platformSelect.value); };
+      platformSelect.addEventListener("change", updateCommand);
+      updateCommand();
       document.querySelector("#copy-theme-command").addEventListener("click", () =>
-        copyWithFeedback(${JSON.stringify(installCommand)}, "换肤命令已复制"));
+        copyWithFeedback(command.textContent, "换肤命令已复制"));
       document.querySelector("#download-theme-package").addEventListener("click", async (event) => {
         const button = event.currentTarget;
         if (button.disabled) return;
@@ -160,7 +167,8 @@ function renderThemePage(theme) {
           <div class="theme-tags">${theme.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
           <dl><div><dt>作者</dt><dd>${escapeHtml(theme.author)}</dd></div><div><dt>许可</dt><dd>${escapeHtml(theme.license)}</dd></div><div><dt>格式</dt><dd>Theme v2</dd></div></dl>
           <button id="download-theme-package" class="button primary-button" type="button">下载主题包</button>
-          <div class="command-box"><code>${escapeHtml(installCommand)}</code><button id="copy-theme-command" type="button">复制</button></div>
+          <label class="command-platform" for="theme-platform">选择平台 <select id="theme-platform"><option value="windows">Windows · PowerShell</option><option value="macos" selected>macOS · Terminal</option></select></label>
+          <div class="command-box"><code id="theme-command">${escapeHtml(installCommand)}</code><button id="copy-theme-command" type="button">复制</button></div>
           <a class="button secondary-button" href="../../preview/?themeId=${encodeURIComponent(theme.id)}">在模拟器预览</a>
           <a class="button secondary-button" href="../../studio/?theme=${encodeURIComponent(theme.id)}">在 Studio 调整</a>
           <a class="button secondary-button" href="${manifestUrl}" download>下载 theme.json</a>

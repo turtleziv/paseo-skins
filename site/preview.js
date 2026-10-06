@@ -1,4 +1,4 @@
-import { copyWithFeedback, getApplyCommand, loadTheme, showToast } from "./common.js";
+import { copyWithFeedback, detectCommandPlatform, getApplyCommand, loadTheme, showToast } from "./common.js";
 import { mountSimulator } from "./simulator.js";
 
 const parameters = new URLSearchParams(window.location.search);
@@ -38,7 +38,10 @@ await mountSimulator(document.querySelector("#preview-simulator"), {
   themeLimit: Number.POSITIVE_INFINITY,
 });
 
-document.querySelector("#apply-theme").addEventListener("click", () => copyWithFeedback(getApplyCommand(summary.id), "换肤命令已复制"));
+const commandPlatform = document.querySelector("#preview-platform");
+commandPlatform.value = detectCommandPlatform();
+document.querySelector("#apply-theme").addEventListener("click", () =>
+  copyWithFeedback(getApplyCommand(summary.id, commandPlatform.value), "换肤命令已复制"));
 
 const tabs = [...document.querySelectorAll('[role="tab"]')];
 for (const tab of tabs) {

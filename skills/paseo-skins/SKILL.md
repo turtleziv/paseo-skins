@@ -1,38 +1,37 @@
 ---
 name: paseo-skins
-description: Safely browse, create, inspect, install, switch, verify, and remove themes for Paseo on macOS or the tested Windows fork. Use when a user asks to change Paseo's background, build a theme from an image, apply a skin, list themes, diagnose a theme, or restore its native appearance.
+description: Safely browse, create, inspect, install, switch, verify, and remove Paseo themes on macOS or Windows. Use when a user asks to change Paseo's background, build a theme from an image, apply a skin, list themes, diagnose a theme, or restore its native appearance.
 ---
 
 # Paseo Skins
 
-Use the public theme catalog and the zero-patch CDP loader. Never modify `Paseo.app`, `app.asar`, the Paseo daemon, or agent data.
+Use the public theme catalog and the zero-patch CDP loader. Preserve the Paseo executable, `app.asar`, daemon, and agent data.
 
-Choose the host workflow first. The PowerShell workflow below covers Windows x64 with Paseo 0.10.3 on the tested fork branch. The subsequent Bash workflows use the macOS upstream package.
+Choose the host workflow first. The PowerShell workflow has live evidence on Windows x64 with Paseo 0.10.3; the Bash workflow has live evidence on macOS arm64 with older Paseo versions. Read [compatibility evidence](https://github.com/huangguang1999/paseo-skins/blob/main/COMPATIBILITY.md) before claiming another host or version is verified.
 
 ## Endpoints
 
 - Catalog: `https://huangguang1999.github.io/paseo-skins/catalog.json`
 - Theme v2 schema: `https://huangguang1999.github.io/paseo-skins/schema/paseo-theme-v2.schema.json`
 - Upstream repository: `https://github.com/huangguang1999/paseo-skins`
-- Windows fork: `https://github.com/turtleziv/paseo-skins/tree/windows-support`
-- macOS CLI package: `github:huangguang1999/paseo-skins`
-- Windows fork CLI package: `github:turtleziv/paseo-skins#windows-support`
+- CLI package for one-off commands on both platforms: `github:huangguang1999/paseo-skins`
 - Default CDP endpoint: `127.0.0.1:9224`
 
-## Windows fork workflow
+## Windows PowerShell workflow
 
-Use PowerShell and Node.js 22 or newer. The tested target is Paseo 0.10.3; check [the fork CI run](https://github.com/turtleziv/paseo-skins/actions/runs/37362302569) for commit `bc6dc7a` before claiming this branch is verified. The GitHub `npx` entry works for one-off commands with public inputs:
+Use PowerShell, Git, and Node.js 22 or newer. For a one-off read-only command, use the public GitHub package:
 
 ```powershell
-$package = 'github:turtleziv/paseo-skins#windows-support'
+$package = 'github:huangguang1999/paseo-skins'
 npx.cmd --yes $package --help
 ```
 
-For user images and a persistent Guardian, reuse a stable local checkout of this branch. If none exists, clone it to a durable path. The Windows task stores absolute CLI and Guardian paths, so npm's disposable `npx` cache is not a persistent install location.
+For user images and a persistent Guardian, use a stable local checkout. If none exists, clone it to a durable path. The Windows task stores absolute CLI and Guardian paths, so npm's disposable `npx` cache is not a persistent install location. If `$p` already exists, verify it is the intended checkout before using it.
 
 ```powershell
-git clone --branch windows-support --single-branch https://github.com/turtleziv/paseo-skins.git 'C:\paseo-skins-windows'
-Set-Location 'C:\paseo-skins-windows'
+$p = Join-Path $HOME 'paseo-skins'
+git clone https://github.com/huangguang1999/paseo-skins.git $p
+Set-Location $p
 npm.cmd ci
 node .\src\cli.mjs doctor --json
 node .\src\cli.mjs status --json
@@ -99,25 +98,26 @@ Use the persistent local-theme flow below after inspection. Never infer redistri
 
 ## Apply a public theme persistently (macOS)
 
-Set the selected catalog identifier and package placeholder:
+Use a fixed checkout under the user's home. If the path already exists, confirm it is the intended checkout and reuse it. Keep the checkout after installation because LaunchAgents retain its absolute CLI path:
 
 ```bash
-THEME_ID='<catalog theme id>'
-PASEO_SKIN_PACKAGE='github:huangguang1999/paseo-skins'
+if [ ! -e "$HOME/paseo-skins" ]; then git clone https://github.com/huangguang1999/paseo-skins.git "$HOME/paseo-skins"; fi
+cd "$HOME/paseo-skins"
+npm ci
 ```
 
 1. Check Node.js and diagnose the selected catalog theme without changing Paseo. Require Node.js 22 or newer and a passing result.
 
 ```bash
 node --version
-npx --yes "$PASEO_SKIN_PACKAGE" doctor --theme-url '<absolute theme manifest URL>' --json
+node ./src/cli.mjs doctor --theme-url '<absolute theme manifest URL>' --json
 ```
 
 2. Inspect ownership before changing it:
 
 ```bash
-npx --yes "$PASEO_SKIN_PACKAGE" status --json
-npx --yes "$PASEO_SKIN_PACKAGE" autostart status --json
+node ./src/cli.mjs status --json
+node ./src/cli.mjs autostart status --json
 ```
 
 If a manual watcher owns the port, stop it cleanly with its original terminal interrupt before continuing. Never run competing watchers.
@@ -125,7 +125,7 @@ If a manual watcher owns the port, stop it cleanly with its original terminal in
 3. Install or switch the persistent Guardian with the explicit public command:
 
 ```bash
-npx --yes "$PASEO_SKIN_PACKAGE" apply <theme-id> --persist --json
+node ./src/cli.mjs apply <theme-id> --persist --json
 ```
 
 `--persist` is explicit authorization to install current-user macOS LaunchAgents. A successful active result means closing the terminal, restarting Paseo, or rebooting macOS will restore the selected theme automatically.
@@ -135,8 +135,8 @@ If the result contains `requiresPaseoRestart: true`, Paseo was already running w
 4. Verify the persistent owner and renderer after the theme becomes active:
 
 ```bash
-npx --yes "$PASEO_SKIN_PACKAGE" autostart status --json
-npx --yes "$PASEO_SKIN_PACKAGE" verify --theme-url '<absolute theme manifest URL>' --port 9224
+node ./src/cli.mjs autostart status --json
+node ./src/cli.mjs verify --theme-url '<absolute theme manifest URL>' --port 9224
 ```
 
 Treat the task as complete only when `verify` reports `pass: true`, unless the command explicitly reports that a normal user-controlled Paseo restart is still required. Report the applied theme, Guardian state, watcher state, and restore commands.
@@ -146,7 +146,7 @@ Treat the task as complete only when `verify` reports `pass: true`, unless the c
 After creating and inspecting a local Theme v2 manifest, install it with:
 
 ```bash
-npx --yes "$PASEO_SKIN_PACKAGE" autostart install \
+node ./src/cli.mjs autostart install \
   --theme '/absolute/path/to/output/theme-id.theme.json'
 ```
 
@@ -161,8 +161,8 @@ Run the selected catalog theme's `apply <theme-id> --persist` command. A loaded 
 Restore the native renderer and remove automatic recovery:
 
 ```bash
-npx --yes github:huangguang1999/paseo-skins autostart uninstall
-npx --yes github:huangguang1999/paseo-skins reset --port 9224
+node "$HOME/paseo-skins/src/cli.mjs" autostart uninstall
+node "$HOME/paseo-skins/src/cli.mjs" reset --port 9224
 ```
 
 `reset` removes injected styles without restarting Paseo or its daemon. `autostart uninstall` removes the current-user LaunchAgents so the theme does not return after the next restart.

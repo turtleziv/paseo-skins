@@ -93,7 +93,14 @@ test("Guardian keeps running while a stop request is only partly written", async
     cdpReadyImplementation: async () => false,
   });
   const outcome = run.then((value) => ({ value }), (error) => ({ error }));
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await waitUntil(async () => {
+    try {
+      return (await readFile(current.logPath, "utf8")).includes("guardian-stop-request-incomplete");
+    } catch (error) {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    }
+  }, 5_000);
   await writeFile(stopPath, JSON.stringify({
     installationId: current.installationId,
     generation: current.generation,

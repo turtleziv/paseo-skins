@@ -9,9 +9,14 @@
     <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../styles.css" />
     <script type="module">
-      import { copyWithFeedback } from "../common.js";
-      const command = "npx --yes github:huangguang1999/paseo-skins apply morning-mist --persist";
-      document.querySelector("#copy-quick-start").addEventListener("click", () => copyWithFeedback(command, "快速开始命令已复制"));
+      import { copyWithFeedback, detectCommandPlatform, getApplyCommand } from "../common.js";
+      const platform = document.querySelector("#quick-start-platform");
+      const command = document.querySelector("#quick-start-command");
+      platform.value = detectCommandPlatform();
+      const updateCommand = () => { command.textContent = getApplyCommand("morning-mist", platform.value); };
+      platform.addEventListener("change", updateCommand);
+      updateCommand();
+      document.querySelector("#copy-quick-start").addEventListener("click", () => copyWithFeedback(command.textContent, "快速开始命令已复制"));
     </script>
   </head>
   <body>
@@ -24,13 +29,13 @@
       <section class="page-hero"><p class="eyebrow">COMMAND-LINE TOOL</p><h1>不装客户端，<br />一条命令<i>换肤。</i></h1><p>面向程序员的开源 CLI。它负责主题完整性、Paseo 连接、持久 watcher 和一键还原；网页只负责预览与制作。</p></section>
       <section class="content-shell">
         <div class="cli-grid">
-          <article class="cli-primary"><p class="eyebrow">QUICK START</p><h2>应用热门晨雾山水</h2><p>需要 macOS、Paseo.app 与 Node.js 22+。命令会校验公开目录、Theme v2 清单和原图 SHA-256，再安装当前用户的持久 Guardian。</p><pre class="cli-command"><code>npx --yes github:huangguang1999/paseo-skins apply morning-mist --persist</code></pre><button id="copy-quick-start" type="button" class="button">复制命令</button></article>
-          <article class="cli-secondary panel"><p class="eyebrow">CORE COMMANDS</p><h3>完整工作流</h3><div class="command-list"><div><code>paseo-skin list</code><p>列出公开目录中的主题。</p></div><div><code>paseo-skin apply &lt;theme-id&gt; --persist</code><p>持久应用主题并自动恢复。</p></div><div><code>paseo-skin inspect --theme …</code><p>离线检查清单与图片。</p></div><div><code>paseo-skin create --image …</code><p>从图片制作主题包。</p></div><div><code>paseo-skin verify --screenshot …</code><p>验证真实 renderer 并保存截图。</p></div><div><code>paseo-skin autostart uninstall</code><p>移除自动恢复配置。</p></div><div><code>paseo-skin reset</code><p>恢复原版 Paseo 样式。</p></div></div></article>
+          <article class="cli-primary"><p class="eyebrow">QUICK START</p><h2>应用热门晨雾山水</h2><p>需要 macOS 或 Windows、Paseo、Git 与 Node.js 22+。命令会在用户目录建立固定 checkout、安装依赖、校验主题清单与图片，并安装当前用户的持久 Guardian。</p><label class="command-platform" for="quick-start-platform">选择平台 <select id="quick-start-platform"><option value="windows">Windows · PowerShell</option><option value="macos" selected>macOS · Terminal</option></select></label><pre class="cli-command"><code id="quick-start-command">p="$HOME/paseo-skins"; { [ -d "$p/.git" ] || { [ ! -e "$p" ] &amp;&amp; git clone https://github.com/huangguang1999/paseo-skins.git "$p"; }; } &amp;&amp; [ "$(git -C "$p" remote get-url origin)" = "https://github.com/huangguang1999/paseo-skins.git" ] &amp;&amp; npm ci --prefix "$p" &amp;&amp; node "$p/src/cli.mjs" apply morning-mist --persist</code></pre><button id="copy-quick-start" type="button" class="button">复制命令</button></article>
+          <article class="cli-secondary panel"><p class="eyebrow">CORE COMMANDS</p><h3>完整工作流</h3><p>以下命令在固定 checkout 根目录执行，Windows PowerShell 与 macOS Terminal 通用。</p><div class="command-list"><div><code>node ./src/cli.mjs list</code><p>列出公开目录中的主题。</p></div><div><code>node ./src/cli.mjs apply &lt;theme-id&gt; --persist</code><p>持久应用主题并自动恢复。</p></div><div><code>node ./src/cli.mjs inspect --theme …</code><p>离线检查清单与图片。</p></div><div><code>node ./src/cli.mjs create --image …</code><p>从图片制作主题包。</p></div><div><code>node ./src/cli.mjs verify --screenshot …</code><p>验证真实 renderer 并保存截图。</p></div><div><code>node ./src/cli.mjs autostart uninstall</code><p>移除自动恢复配置。</p></div><div><code>node ./src/cli.mjs reset</code><p>恢复原版 Paseo 样式。</p></div></div></article>
         </div>
         <div class="platform-note"><b>为什么不是客户端？</b><p>本项目不需要另一个常驻 GUI。GitHub Pages 提供无权限的预览和 Studio；CLI 是可审查、可脚本化的本机执行层。两者都不会上传你的主题图片。</p></div>
-        <div class="platform-note"><b>关闭终端也会自动恢复</b><p>快速开始命令通过可见的 <code>--persist</code> 显式安装当前用户的 macOS LaunchAgents。关闭终端、退出 Paseo 或重启电脑后都会自动恢复；可用 <code>autostart uninstall</code> 完整移除。</p></div>
+        <div class="platform-note"><b>关闭终端也会自动恢复</b><p><code>--persist</code> 会安装当前用户的 macOS LaunchAgents 或 Windows 登录任务。固定 checkout 请保留在用户目录；安装后可从该目录运行 <code>node src/cli.mjs autostart uninstall</code> 移除常驻。Paseo 若已运行且未启用本机 CDP，请完成工作后正常退出再打开。</p></div>
       </section>
     </main>
-    <footer class="site-footer"><a class="brand" href="../"><span class="brand-glyph">P</span><span>Paseo <i>Skins</i></span></a><p>Node.js 原生实现，无运行时第三方依赖。</p><nav><a href="../docs/">完整文档</a><a href="../gallery/">选择主题</a></nav></footer>
+    <footer class="site-footer"><a class="brand" href="../"><span class="brand-glyph">P</span><span>Paseo <i>Skins</i></span></a><p>Node.js CLI；Windows WebP 取色使用 sharp。</p><nav><a href="../docs/">完整文档</a><a href="../gallery/">选择主题</a></nav></footer>
   </body>
 </html>

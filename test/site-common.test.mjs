@@ -22,9 +22,26 @@ test("catalog theme resolution reports explicit fallback", () => {
   assert.equal(result.requestedThemeId, "missing-theme");
 });
 
-test("public site commands explicitly request persistent apply", () => {
-  assert.equal(
-    getApplyCommand("morning-mist"),
-    "npx --yes github:huangguang1999/paseo-skins apply morning-mist --persist",
-  );
+test("Windows apply command boots a durable checkout before installing Guardian", () => {
+  const command = getApplyCommand("morning-mist", "windows");
+  assert.match(command, /Join-Path \$HOME 'paseo-skins'/);
+  assert.match(command, /git clone https:\/\/github\.com\/huangguang1999\/paseo-skins\.git/);
+  assert.match(command, /npm\.cmd ci --prefix \$p/);
+  assert.match(command, /git -C \$p remote get-url origin/);
+  assert.match(command, /node \(Join-Path \$p 'src\/cli\.mjs'\) apply morning-mist --persist/);
+  assert.doesNotMatch(command, /npx/);
+});
+
+test("macOS apply command boots a durable checkout before installing Guardian", () => {
+  const command = getApplyCommand("morning-mist", "macos");
+  assert.match(command, /\$HOME\/paseo-skins/);
+  assert.match(command, /git clone https:\/\/github\.com\/huangguang1999\/paseo-skins\.git/);
+  assert.match(command, /npm ci --prefix "\$p"/);
+  assert.match(command, /git -C "\$p" remote get-url origin/);
+  assert.match(command, /node "\$p\/src\/cli\.mjs" apply morning-mist --persist/);
+  assert.doesNotMatch(command, /npx/);
+});
+
+test("apply command rejects shell input in catalog identifiers", () => {
+  assert.throws(() => getApplyCommand("morning-mist; echo unsafe", "windows"), /主题 ID/);
 });

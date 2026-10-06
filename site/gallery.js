@@ -1,5 +1,6 @@
 import {
   copyWithFeedback,
+  detectCommandPlatform,
   escapeHtml,
   getApplyCommand,
   loadCatalog,
@@ -16,12 +17,14 @@ const state = {
   manifests: new Map(),
   page: Math.max(1, Number.parseInt(searchParameters.get("page") ?? "1", 10) || 1),
   renderRevision: 0,
+  selectedThemeId: null,
   sort: SORTS.has(searchParameters.get("sort")) ? searchParameters.get("sort") : "popular",
 };
 
 const elements = {
   applyCommand: document.querySelector("#apply-command"),
   applyDialog: document.querySelector("#apply-dialog"),
+  applyPlatform: document.querySelector("#apply-platform"),
   applyTitle: document.querySelector("#apply-title"),
   closeDialog: document.querySelector("#close-apply-dialog"),
   copyCommand: document.querySelector("#copy-command"),
@@ -63,8 +66,10 @@ function updateLocation() {
 }
 
 function openApplyDialog(theme) {
+  state.selectedThemeId = theme.id;
   elements.applyTitle.textContent = `应用「${theme.name}」`;
-  elements.applyCommand.textContent = getApplyCommand(theme.id);
+  elements.applyPlatform.value = detectCommandPlatform();
+  elements.applyCommand.textContent = getApplyCommand(theme.id, elements.applyPlatform.value);
   elements.applyDialog.showModal();
 }
 
@@ -213,6 +218,11 @@ elements.grid.addEventListener("click", async (event) => {
   if (theme) openApplyDialog(theme);
 });
 elements.copyCommand.addEventListener("click", () => copyWithFeedback(elements.applyCommand.textContent, "换肤命令已复制"));
+elements.applyPlatform.addEventListener("change", () => {
+  if (state.selectedThemeId) {
+    elements.applyCommand.textContent = getApplyCommand(state.selectedThemeId, elements.applyPlatform.value);
+  }
+});
 elements.closeDialog.addEventListener("click", () => elements.applyDialog.close());
 elements.applyDialog.addEventListener("click", (event) => {
   if (event.target === elements.applyDialog) elements.applyDialog.close();

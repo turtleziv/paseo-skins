@@ -32,7 +32,7 @@
 - 支持通过 `--theme-url` 安装远程主题；只接受 HTTPS 同目录 JSON 与图片，不执行远程脚本。
 - `doctor` 提供只读环境诊断，`verify` 检查根节点可见性、overlay 安全和横向溢出。
 - 主题素材逐项记录作者、来源和许可证；Release 同时生成校验和与 GitHub artifact attestation。
-- Node.js 原生实现，无运行时第三方依赖。
+- Node.js CLI；Windows 上的 WebP 自动取色使用 `sharp`，由 `npm ci` 安装。
 
 ## 皮肤画廊
 
@@ -50,35 +50,50 @@ npm run site
 
 ## 一条命令换肤
 
-主题库和模拟器会为每款公开主题生成稳定的快捷命令：
+主题库、模拟器和 [CLI 页面](https://huangguang1999.github.io/paseo-skins/download/) 为每款公开主题提供 Windows PowerShell 与 macOS Terminal 两种复制命令。命令首次运行时用 Git 在用户目录创建固定的 `paseo-skins` checkout、以 `npm ci` 安装依赖，再从该目录执行 `apply <theme-id> --persist`。已有 checkout 时会复用，不自动覆盖本地修改；升级时请在该目录自行运行 `git pull --ff-only` 与 `npm ci`。
+
+也可分步执行。macOS Terminal：
 
 ```bash
-npx --yes github:huangguang1999/paseo-skins apply morning-mist --persist
+git clone https://github.com/huangguang1999/paseo-skins.git "$HOME/paseo-skins"
+cd "$HOME/paseo-skins"
+npm ci
+node ./src/cli.mjs apply morning-mist --persist
 ```
 
-`apply` 从同源公开 catalog 解析主题 ID，下载并验证 Theme v2 清单与图片。网站公开的命令明确携带 `--persist`：没有 Guardian 时安装当前用户的 macOS 登录代理，已有 Guardian 时原位切换主题，并等待 watcher 与 renderer 同时确认新主题。关闭终端、退出 Paseo 或重启电脑后，主题都会自动恢复。省略 `--persist` 才会使用前台 watcher；手动 watcher 占用端口时，命令会要求先在原终端按 `Ctrl+C`。网页不会直接连接或控制本机 Paseo。
+Windows PowerShell：
+
+```powershell
+$p = Join-Path $HOME 'paseo-skins'
+git clone https://github.com/huangguang1999/paseo-skins.git $p
+Set-Location $p
+npm.cmd ci
+node ./src/cli.mjs apply morning-mist --persist
+```
+
+上述分步示例用于首次安装。目录已存在时先确认其 `origin` 是本项目上游，再从该目录运行 `npm ci`／`npm.cmd ci` 和 `apply`；网站复制命令会自动完成目录存在与来源检查。
+
+`apply` 从同源公开 catalog 解析主题 ID，下载并验证 Theme v2 清单与图片。`--persist` 安装当前用户的 macOS LaunchAgents 或 Windows 登录任务，已有 Guardian 时原位切换主题，并等待 watcher 与 renderer 同时确认新主题。**不要删除固定 checkout**：Guardian 保存其 CLI 绝对路径；npm 的临时 `npx` cache 不适合长期常驻。省略 `--persist` 才使用前台 watcher；手动 watcher 占用端口时，请先在原终端按 `Ctrl+C`。网页不连接或控制本机 Paseo。
 
 ## Agent Skill 接入
 
 主题卡默认直接下载主题包；希望由 Agent 接管完整验收流程的用户也可以全局安装 Skill：
 
-```bash
-npx skills add huangguang1999/paseo-skins --skill paseo-skins -g
-```
+macOS Terminal：`npx skills add huangguang1999/paseo-skins --skill paseo-skins -g`；Windows PowerShell：`npx.cmd skills add huangguang1999/paseo-skins --skill paseo-skins -g`。
 
 安装后可直接对支持 Agent Skills 的 Codex、Claude Code、Cursor 等工具说“使用 `$paseo-skins` 换成晨雾山水”。Skill 源码位于 `skills/paseo-skins/`，网站同时将它发布为 `https://huangguang1999.github.io/paseo-skins/SKILL.md`，供尚未安装 Skill 的 Agent 临时读取。
 
 ## 环境要求
 
-- macOS 与 `/Applications/Paseo.app`；公开 fork 的 `windows-support` 分支另有 Windows 试验支持
-- Windows 试验使用当前用户安装的 Paseo 0.10.3 与 `Paseo.exe`
-- Node.js 22 或更高版本
+- macOS 与 `/Applications/Paseo.app`，或 Windows x64 与当前用户安装的 `Paseo.exe`
+- Node.js 22 或更高版本；持久安装的首次 checkout 另需 Git
+- 真机相容性范围见 [`COMPATIBILITY.md`](COMPATIBILITY.md)；Windows Paseo 0.10.3 已有实测，较新版本、Linux 与 Intel Mac 未获同等实机验证
 
 ## 快速开始
 
 ```bash
 cd paseo-skins
-npm install
+npm ci
 npm run doctor
 npm start
 ```
@@ -87,7 +102,7 @@ npm start
 
 直接运行 `start`、`inject` 或不带 `--persist` 的 `apply` 时，终端需要保持运行。按 `Ctrl+C` 会停止 watcher 并注销 reload hook，但当前窗口的主题会保留，直到执行 `pause` / `reset` 或关闭窗口。网站复制的 `apply ... --persist` 不需要保持终端运行。
 
-从画廊安装远程主题时，命令形态如下：
+一次性前台试用远程主题可以从 GitHub 入口运行；Windows PowerShell 把 `npx` 换为 `npx.cmd`。此模式依赖当前终端，适合试用，不适合常驻：
 
 ```bash
 npx --yes github:huangguang1999/paseo-skins start \
@@ -99,25 +114,25 @@ npx --yes github:huangguang1999/paseo-skins start \
 | 命令 | 作用 |
 |---|---|
 | `npm start` | 必要时启动 Paseo，并持续注入当前及新窗口 |
-| `npx --yes github:huangguang1999/paseo-skins apply <theme-id> --persist` | 从公开目录解析主题 ID，校验后持久应用并自动恢复 |
+| `node ./src/cli.mjs apply <theme-id> --persist` | 从固定 checkout 解析公开目录主题 ID，持久应用并自动恢复 |
 | `npm run inject -- --port 9224` | 连接已经启用 CDP 的 Paseo |
 | `npm run status -- --port 9224` | 查看应用、CDP、renderer 和主题状态 |
 | `npm run doctor -- --port 9224` | 只读检查环境、主题资源和可选实时连接 |
 | `npm run verify -- --port 9224` | 验证根节点、主题生命周期和布局安全 |
-| `npm run verify -- --port 9224 --screenshot /tmp/paseo-skin.jpg` | 验证并保存当前 renderer 截图；4K 窗口推荐 JPEG |
+| `npm run verify -- --port 9224 --screenshot <绝对路径.jpg>` | 验证并保存当前 renderer 截图；4K 窗口推荐 JPEG |
 | `npm run audit:renderer -- --port 9224` | 开发/发布前巡检 21 类页面、5 类 hover、文字对比度和状态恢复 |
 | `npm run list -- --json` | 列出公开目录中的所有 Paseo 主题 |
-| `npm run inspect -- --theme /path/to/theme.json` | 不连接 Paseo，校验并说明本地或远程主题 |
-| `npm run create -- --image /path/to/image.webp --name "山海夜航" --output ./my-theme` | 从一张图自动取色并生成 Theme v2 |
+| `npm run inspect -- --theme <清单绝对路径>` | 不连接 Paseo，校验并说明本地或远程主题 |
+| `npm run create -- --image <图片绝对路径.webp> --name "山海夜航" --output ./my-theme` | 从一张图自动取色并生成 Theme v2 |
 | `npm run pause -- --port 9224` | 移除当前主题，恢复官方渲染样式 |
 | `npm run reset -- --port 9224` | 与 `pause` 相同，用于故障恢复 |
 | `npm run autostart:install` | 安装当前平台的登录常驻程序，让皮肤在每次 Paseo 重启后自动恢复 |
 | `npm run autostart:status` | 查看开机自启代理是否已加载 |
 | `npm run autostart:uninstall` | 移除开机自启代理 |
 | `npm run check` | 运行语法检查和全部测试 |
+| `npm run release:check` | 执行发布前测试、站点链接、素材权利和包内容审计 |
 
 截图命令在高 DPI 窗口中会让 PNG 使用 CSS 像素尺寸，避免 Node.js WebSocket 因超大消息断开；JPEG 保持 92 质量并使用 Chromium surface 捕获。
-| `npm run release:check` | 执行发布前测试、站点链接、素材权利和包内容审计 |
 
 一键恢复的推荐顺序：
 
@@ -131,10 +146,11 @@ npm run reset -- --port 9224
 
 ## 持久应用与开机自启（macOS）
 
-网站、主题详情和 Agent Skill 给出的公开换肤命令都显式包含 `--persist`。该选项安装当前用户的开机自启代理，使主题在关闭终端、退出 Paseo 或重启电脑后自动恢复：
+网站、主题详情和 Agent Skill 给出的公开换肤命令都显式包含 `--persist`，并从固定 checkout 执行。该选项安装当前用户的开机自启代理，使主题在关闭终端、退出 Paseo 或重启电脑后自动恢复：
 
 ```bash
-npx --yes github:huangguang1999/paseo-skins apply morning-mist --persist
+cd "$HOME/paseo-skins"
+node ./src/cli.mjs apply morning-mist --persist
 ```
 
 制作本地主题或需要单独管理自启时，也可以直接安装：
@@ -158,23 +174,24 @@ npm run autostart:uninstall
 
 自启代理不会 patch 或重启 Paseo，也不会重启 daemon；它只在登录时注入环境变量并守护皮肤 watcher。生成的文件位于 `~/Library/LaunchAgents/com.paseo-skins.*.plist` 和 `~/.paseo-skin-loader/guardian.mjs`。
 
-## Windows fork（Paseo 0.10.3）
+## Windows（已实测 Paseo 0.10.3）
 
-Windows 改动位于 [`turtleziv/paseo-skins#windows-support`](https://github.com/turtleziv/paseo-skins/tree/windows-support)；[commit `bc6dc7a` 的 CI](https://github.com/turtleziv/paseo-skins/actions/runs/37362302569) 已通过 Windows Node 22／24 和 Node 24 `release:check`。上面的 `github:huangguang1999/paseo-skins` 与网站快捷命令仍指向 macOS 上游。一次性查看 fork CLI 或用已公开的图片生成主题，可以在 PowerShell 中运行：
+Windows 实机证据目前来自 [`turtleziv/paseo-skins#windows-support`](https://github.com/turtleziv/paseo-skins/tree/windows-support)，详见 `COMPATIBILITY.md`；合并本分支后，下列命令使用同一上游仓库。一次性查看 CLI 或用已公开的图片生成主题，可以在 PowerShell 中运行：
 
 ```powershell
-$package = 'github:turtleziv/paseo-skins#windows-support'
+$package = 'github:huangguang1999/paseo-skins'
 npx.cmd --yes $package --help
 npx.cmd --yes $package create --image 'C:\path\to\public-image.jpg' --name 'My Theme' --id my-theme --output 'C:\path\to\my-theme'
 ```
 
-`npx` 会从 GitHub 取得并执行该分支的代码。个人图片可先检视 fork，再从下方固定位置的 clone 执行 `create`。本分支的远端 `npx create` 已用仓库内公开 JPEG 实跑、`inspect` 验证并核对图片 SHA-256；个人温室图片是在本地 clone 中生成和使用，没有随 fork 发布。
+`npx.cmd` 会从 GitHub 取得并执行仓库代码；一次性命令可用临时 npm cache。个人图片建议从下方固定 checkout 执行 `create`。Windows 分支的远端 `npx create` 已用仓库内公开 JPEG 实跑、`inspect` 验证并核对图片 SHA-256；个人图片不会随仓库发布。
 
 持久安装请使用固定位置的 clone：排程会保存 CLI／Guardian 的绝对路径，npm cache 清理后不能保证 `npx` 路径继续存在。已有本分支 clone 的用户从仓库根目录开始；首次使用者先执行：
 
 ```powershell
-git clone --branch windows-support --single-branch https://github.com/turtleziv/paseo-skins.git 'C:\paseo-skins-windows'
-Set-Location 'C:\paseo-skins-windows'
+$p = Join-Path $HOME 'paseo-skins'
+git clone https://github.com/huangguang1999/paseo-skins.git $p
+Set-Location $p
 npm.cmd ci
 ```
 
@@ -194,11 +211,11 @@ node .\src\cli.mjs autostart install --theme 'C:\path\to\my-theme\my-theme.theme
 node .\src\cli.mjs verify --theme 'C:\path\to\my-theme\my-theme.theme.json' --json
 ```
 
-`autostart install` 会改变当前用户的环境值并注册登录任务；运行前先确认 `autostart status` 没有不属于本工具的现有设置。若 Paseo 已运行但没有 CDP，等手头工作完成后正常关闭并重新打开，再运行 `verify`。生成后的清单和图片须保留在指定绝对路径。要让这个 clone 的无参数命令也选用本地主题，可在仓库根目录建立下文的 `.paseo-default-theme.json`；该文件不会随 GitHub fork 或 `npx` cache 同步。
+`autostart install` 会改变当前用户的环境值并注册登录任务；运行前先确认 `autostart status` 没有不属于本工具的现有设置。若 Paseo 已运行但没有 CDP，等手头工作完成后正常关闭并重新打开，再运行 `verify`。生成后的清单和图片须保留在指定绝对路径。要让这个 checkout 的无参数命令也选用本地主题，可在仓库根目录建立下文的 `.paseo-default-theme.json`；该文件不会随 GitHub 仓库或 `npx` cache 同步。
 
 Windows 安装只写当前用户的 `PASEO_ELECTRON_FLAGS`，并注册一个当前用户登录时启动的 Task Scheduler Guardian。任务通过 `wscript.exe` 隐藏启动 Node Guardian，避免留下可被误关的黑色控制台窗口；Guardian 异常退出时，启动器会以 1 秒起、最多 60 秒的间隔重试，正常退出码 0 则结束任务。Guardian 等待 `127.0.0.1:9224` 上经过 Paseo target 验证的 CDP，再启动单一 watcher；Paseo 关闭、CDP 消失时会正常停止 watcher，保留 Guardian 等下次启动。配置与事件日志存于 `%USERPROFILE%\.paseo-skin-loader\`。如果原本已有不属于本工具的 `PASEO_ELECTRON_FLAGS` 或同名任务，安装会拒绝覆盖。已经运行而没有 CDP 的 Paseo 不会被中断；完成手头工作后正常关闭并重新打开一次。
 
-已经安装旧版可见控制台任务时，先正常关闭 Paseo，再运行 `node .\src\cli.mjs autostart uninstall --json`，然后用上面的 `autostart install` 命令重新安装；安装器不会原位覆盖旧任务。可用 `autostart status --json` 和 `%USERPROFILE%\.paseo-skin-loader\windows-autostart.log` 检查 Guardian，而无需寻找控制台窗口。
+已经安装旧版可见控制台任务时，先正常关闭 Paseo，再运行 `node .\src\cli.mjs autostart uninstall --json`，然后用上面的 `autostart install` 命令重新安装；安装器不会原位覆盖旧任务。可用 `autostart status --json` 和 `$HOME\.paseo-skin-loader\windows-autostart.log` 检查 Guardian，而无需寻找控制台窗口。
 
 卸载和还原当前窗口：
 
@@ -222,6 +239,14 @@ npm run create -- \
 
 npm run inspect -- --theme "$PWD/my-theme/mountain-night.theme.json"
 npm start -- --theme "$PWD/my-theme/mountain-night.theme.json"
+```
+
+Windows PowerShell 在固定 checkout 根目录使用：
+
+```powershell
+node .\src\cli.mjs create --image 'C:\path\to\background.webp' --name '山海夜航' --id mountain-night --output 'C:\path\to\my-theme'
+node .\src\cli.mjs inspect --theme 'C:\path\to\my-theme\mountain-night.theme.json'
+node .\src\cli.mjs autostart install --theme 'C:\path\to\my-theme\mountain-night.theme.json' --json
 ```
 
 若要让本地 clone 的无参数 `start`、`inspect` 和 `autostart install` 使用自定义主题，在仓库根目录建立 `.paseo-default-theme.json`，填入主题清单的绝对路径：

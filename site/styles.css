@@ -280,9 +280,11 @@ img { display: block; max-width: 100%; }
 .dialog-inner h2 { margin: 0; font-size: 30px; letter-spacing: -.04em; }
 .dialog-inner p { color: var(--muted); line-height: 1.7; }
 .dialog-inner > .form-control { width: 100%; margin: 8px 0 22px; }
-.command-box { display: flex; gap: 8px; margin: 22px 0; padding: 12px; border: 1px solid var(--line); background: var(--paper); }
+.command-platform { display: grid; gap: 8px; margin-top: 18px; font-size: var(--font-size-interface); }
+.command-platform select { width: 100%; min-width: 0; min-height: 42px; padding: 8px 12px; border: 1px solid var(--line); background: var(--paper-strong); color: var(--ink); font: inherit; }
+.command-box { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; margin: 22px 0; padding: 12px; border: 1px solid var(--line); background: var(--paper); }
 .command-box code { flex: 1; min-width: 0; overflow-wrap: anywhere; font: var(--font-size-caption)/1.6 var(--mono); }
-.command-box button { flex: 0 0 auto; border: 0; color: #fff; background: var(--ink); cursor: pointer; }
+.command-box button { min-height: 34px; padding: 5px 10px; border: 0; color: #fff; background: var(--ink); cursor: pointer; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* Preview */
@@ -356,6 +358,7 @@ img { display: block; max-width: 100%; }
 .docs-content h3 { margin-top: 32px; font-size: 20px; }
 .docs-content p, .docs-content li { color: var(--muted); font-size: var(--font-size-body); line-height: 1.8; }
 .docs-content pre, .cli-command { overflow-x: auto; padding: 18px; background: #1a1b1d; color: #e7e3d9; font: var(--font-size-caption)/1.75 var(--mono); }
+.cli-command { white-space: pre-wrap; overflow-wrap: anywhere; }
 .docs-content code:not(pre code) { padding: 2px 5px; background: #e7e1d5; color: var(--ink); font: var(--font-size-caption) var(--mono); }
 .docs-callout { margin: 28px 0; padding: 18px 20px; border-left: 3px solid var(--gold); background: var(--paper-strong); }
 .cli-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; }
@@ -408,6 +411,8 @@ img { display: block; max-width: 100%; }
 }
 
 @media (max-width: 720px) {
+  .command-box { grid-template-columns: minmax(0, 1fr); }
+  .command-box button { justify-self: end; }
   :root { --shell: calc(100vw - 28px); }
   .site-header { height: 64px; }
   .hero { min-height: 580px; padding-top: 65px; }

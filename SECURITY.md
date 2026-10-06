@@ -2,7 +2,7 @@
 
 ## 安全模型
 
-本项目不修改 `/Applications/Paseo.app`、`app.asar`、Paseo 配置或 agent 数据。CDP 仅绑定 `127.0.0.1`，且加载器会拒绝端口不一致、非回环地址或非 page 形态的 WebSocket URL。
+本项目不修改 `/Applications/Paseo.app`、Windows `Paseo.exe`、`app.asar`、Paseo 配置或 agent 数据。CDP 仅绑定 `127.0.0.1`，且加载器会拒绝端口不一致、非回环地址或非 page 形态的 WebSocket URL。
 
 回环地址不是认证机制。Electron CDP 默认没有额外身份验证，同机、同用户权限下的其他进程仍可能访问 renderer。请勿把 CDP 端口通过 SSH、反向代理、容器端口映射或路由器转发到其他机器。
 

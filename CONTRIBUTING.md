@@ -30,7 +30,9 @@ npm run audit:renderer -- --port 9224
 npm run release:check
 ```
 
-`audit:renderer` 需要 Paseo 窗口可见、位于前台且只有一个 renderer 窗口。它会遍历支持页面并恢复原路径；保存纯 JSON 报告时使用 `npm --silent run audit:renderer -- --port 9224 > /tmp/paseo-renderer-style-audit.json`。
+Windows PowerShell 在仓库根目录运行对应的 `npm.cmd ci`、`npm.cmd run check` 与 `npm.cmd run release:check`；macOS Terminal 使用上方命令。一次性 GitHub CLI 调用在 Windows 使用 `npx.cmd`，在 macOS 使用 `npx`。持久安装从固定 checkout 执行，避免 Guardian 指向可清理的 npm cache。网站命令变化需在桌面和 390 px 浏览器中逐平台切换、复制并核对文本与布局；Windows 与 macOS CI 的实际通过状态分别以对应 job 为准。
+
+`audit:renderer` 需要 Paseo 窗口可见、位于前台且只有一个 renderer 窗口。它会遍历支持页面并恢复原路径；保存纯 JSON 报告时，macOS 使用 `npm --silent run audit:renderer -- --port 9224 > /tmp/paseo-renderer-style-audit.json`；Windows PowerShell 先设 `$report = Join-Path $env:TEMP 'paseo-renderer-style-audit.json'`，再运行 `npm.cmd --silent run audit:renderer -- --port 9224 > $report`。
 
 制作本地主题时优先使用：
 
@@ -40,6 +42,13 @@ npm run create -- \
   --name "Theme name" \
   --id theme-id \
   --output ./generated-theme
+```
+
+Windows PowerShell 示例（保留输入图片原件）：
+
+```powershell
+node .\src\cli.mjs create --image 'C:\path\to\background.webp' --name 'Theme name' --id theme-id --output '.\generated-theme'
+node .\src\cli.mjs inspect --theme '.\generated-theme\theme-id.theme.json'
 ```
 
 更新 DreamSkin 适配主题时，把热门榜 API 返回的完整分页元数据和对应原始 ZIP 保存在仓库外，再运行：
