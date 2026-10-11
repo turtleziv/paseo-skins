@@ -19,6 +19,7 @@ const LOG_FILE = "windows-autostart.log";
 const ENVIRONMENT_NAME = "PASEO_ELECTRON_FLAGS";
 const DEFAULT_CLI_PATH = fileURLToPath(new URL("./cli.mjs", import.meta.url));
 const DEFAULT_GUARDIAN_PATH = fileURLToPath(new URL("./windows-guardian.mjs", import.meta.url));
+const SOCKET_HOLDERS_SCRIPT = fileURLToPath(new URL("./windows-socket-holders.ps1", import.meta.url));
 
 function powershellLiteral(value) {
   const source = String(value);
@@ -137,6 +138,17 @@ export function createWindowsSystem({
       );
       return classifyPortListener(JSON.parse(output));
     },
+    // The script bounds its own sweep (SweepMilliseconds); the timeout only covers a hung start.
+    async findSocketHolders(port, { ownerExited = false, signal } = {}) {
+      if (!Number.isInteger(port)) throw new Error("Invalid CDP port");
+      const { stdout } = await executeFileImplementation(
+        executable,
+        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SOCKET_HOLDERS_SCRIPT,
+          "-Port", String(port), ...(ownerExited ? ["-OwnerExited"] : [])],
+        { timeout: 30_000, windowsHide: true, maxBuffer: 1024 * 1024, signal },
+      );
+      return JSON.parse(stdout.trim());
+    },
   };
 }
 
@@ -166,16 +178,38 @@ export function portAcceptsConnections(port, timeoutMilliseconds = 1_000) {
 
 // A dead owner means the old Paseo was ended (e.g. by an update) while a surviving child
 // inherited its listening socket, so the new Paseo cannot bind the port.
-export function describeCdpPortHolder(listener, port) {
+export function describeCdpPortHolder(listener, port, holders = [], lookupError = null) {
   if (!listener) return null;
   if (!listener.alive) {
+    if (holders.length > 0) {
+      const named = holders.map((holder) => `${holder.name ?? "unknown"} (${holder.pid})`).join(", ");
+      return `CDP port ${port} is held by exited process ${listener.pid}; the socket was inherited by ` +
+        `${named} — end those processes, then restart Paseo`;
+    }
     return `CDP port ${port} is held by exited process ${listener.pid}; a leftover child of the old ` +
-      "Paseo still owns the socket — end leftover processes, then restart Paseo";
+      "Paseo still owns the socket — end leftover processes, then restart Paseo" +
+      (lookupError ? ` (holder lookup failed: ${lookupError})` : "");
   }
   if (!/paseo/i.test(listener.name ?? "")) {
     return `CDP port ${port} is held by ${listener.name ?? "unknown"} (pid ${listener.pid}), not Paseo`;
   }
   return null;
+}
+
+// Shared by status and the Guardian. The holder lookup is slow, so it only runs for an exited
+// owner, and a failed lookup still reports the exited owner.
+export async function diagnoseCdpPort(port, { getPortListener, findSocketHolders }) {
+  const listener = await getPortListener(port);
+  let holders = [];
+  let lookupError = null;
+  if (listener && !listener.alive && findSocketHolders) {
+    try {
+      holders = await findSocketHolders(port, { ownerExited: true, ownerPid: listener.pid });
+    } catch (error) {
+      lookupError = error.message;
+    }
+  }
+  return describeCdpPortHolder(listener, port, holders, lookupError);
 }
 
 function validateThemeArguments(themeArguments) {
@@ -326,8 +360,10 @@ export async function collectWindowsAutostartStatus({
   let portProblem = null;
   if (state.configuration && system.getPortListener) {
     try {
-      const port = state.configuration.remoteDebuggingPort;
-      portProblem = describeCdpPortHolder(await system.getPortListener(port), port);
+      portProblem = await diagnoseCdpPort(state.configuration.remoteDebuggingPort, {
+        getPortListener: (port) => system.getPortListener(port),
+        findSocketHolders: system.findSocketHolders && ((port) => system.findSocketHolders(port)),
+      });
     } catch {
       portProblem = null;
     }

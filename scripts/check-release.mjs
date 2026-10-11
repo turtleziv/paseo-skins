@@ -69,6 +69,7 @@ for (const requiredFile of [
   "src/windows-autostart.mjs",
   "src/windows-guardian-launch.vbs",
   "src/windows-guardian.mjs",
+  "src/windows-socket-holders.ps1",
   "assets/stage-black-gold.theme.json",
   "ARCHITECTURE.md",
   "ASSET_PROVENANCE.md",

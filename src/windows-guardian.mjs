@@ -14,7 +14,7 @@ import {
 } from "./cdp-client.mjs";
 import {
   createWindowsSystem,
-  describeCdpPortHolder,
+  diagnoseCdpPort,
   validateWindowsConfiguration,
 } from "./windows-autostart.mjs";
 import { readWatcherLock } from "./watcher-lock.mjs";
@@ -81,6 +81,7 @@ export async function runWindowsGuardian(configurationPath, {
   watcherLockImplementation = readWatcherLock,
   spawnWatcherImplementation = launchWatcher,
   portListenerImplementation = async () => null,
+  socketHoldersImplementation = async () => [],
   portCheckIntervalMilliseconds = 30_000,
 } = {}) {
   if (!path.isAbsolute(configurationPath)) throw new Error("Guardian configuration path must be absolute");
@@ -96,6 +97,18 @@ export async function runWindowsGuardian(configurationPath, {
   let portHolderPort = null;
   let pendingPortCheck = null;
   let lastPortCheck = -Infinity;
+  // The holder lookup is a heavy PowerShell sweep and an orphaned listener keeps the same
+  // inheritors, so one answer per orphaned listener is reused. Stopping aborts a pending lookup
+  // so its child process cannot keep the Guardian task running.
+  const lookupAbort = new AbortController();
+  const holderCache = new Map();
+  const findHolders = async (port, options) => {
+    const key = `${port}:${options.ownerPid}`;
+    if (holderCache.has(key)) return holderCache.get(key);
+    const holders = await socketHoldersImplementation(port, { ...options, signal: lookupAbort.signal });
+    holderCache.set(key, holders);
+    return holders;
+  };
   const checkPortHolder = (port) => {
     if (port !== portHolderPort) {
       portHolder = null;
@@ -104,10 +117,11 @@ export async function runWindowsGuardian(configurationPath, {
     }
     if (!pendingPortCheck && Date.now() - lastPortCheck >= portCheckIntervalMilliseconds) {
       lastPortCheck = Date.now();
-      const check = Promise.resolve()
-        .then(() => portListenerImplementation(port))
-        .then((listener) => describeCdpPortHolder(listener, port),
-          (error) => `waiting for Paseo loopback CDP (port check failed: ${error.message})`)
+      const check = diagnoseCdpPort(port, {
+        getPortListener: portListenerImplementation,
+        findSocketHolders: findHolders,
+      })
+        .catch((error) => `waiting for Paseo loopback CDP (port check failed: ${error.message})`)
         .then((holder) => {
           if (portHolderPort === port) portHolder = holder;
         })
@@ -145,82 +159,90 @@ export async function runWindowsGuardian(configurationPath, {
   };
 
   await log("start", `pid=${process.pid}`);
-  for (;;) {
-    const configuration = await readConfiguration(configurationPath);
-    if (active && active.generation !== configuration.generation) {
-      await log("reconfigure", `generation=${configuration.generation}`);
-      await stopChild();
-    }
-    let request;
-    try {
-      request = await readJson(stopPath);
-      incompleteStopRequest = false;
-    } catch (error) {
-      if (!(error instanceof SyntaxError)) throw error;
-      if (!incompleteStopRequest) await log("stop-request-incomplete");
-      incompleteStopRequest = true;
-      request = null;
-    }
-    if (matchesRequest(request, configuration)) {
-      await stopChild();
-      await writeFile(receiptPath, `${JSON.stringify({
-        installationId: configuration.installationId,
-        generation: configuration.generation,
-        childStopped: true,
-        stoppedAt: new Date().toISOString(),
-      })}\n`, { mode: 0o600 });
-      await log("stopped", `generation=${configuration.generation}`);
-      return { stopped: true, childStopped: true };
-    }
-    if (active && !active.alive) {
-      await log("watcher-exit", `code=${active.result?.code ?? "unknown"}`);
-      active = null;
-    }
-    const cdpReady = await cdpReadyImplementation(configuration.remoteDebuggingPort);
-    if (active && !cdpReady) {
-      await log("cdp-lost", "stopping watcher");
-      await stopChild();
-    }
-    if (!active) {
-      let reason = null;
-      if (!cdpReady) {
-        reason = checkPortHolder(configuration.remoteDebuggingPort) ??
-          "waiting for Paseo loopback CDP";
-      } else {
-        portHolderPort = null;
-        const watcher = await watcherLockImplementation(configuration.remoteDebuggingPort);
-        if (watcher.active) reason = "another watcher owns the port";
-        else if (watcher.error) reason = `watcher lock cannot be read: ${watcher.error}`;
+  try {
+    return await guardianLoop();
+  } finally {
+    lookupAbort.abort();
+  }
+
+  async function guardianLoop() {
+    for (;;) {
+      const configuration = await readConfiguration(configurationPath);
+      if (active && active.generation !== configuration.generation) {
+        await log("reconfigure", `generation=${configuration.generation}`);
+        await stopChild();
       }
-      if (reason) {
-        if (reason !== lastWaitingReason) await log("wait", reason);
-        lastWaitingReason = reason;
-      } else {
-        const child = spawnWatcherImplementation(configuration);
-        const current = { child, generation: configuration.generation, alive: true, result: null };
-        current.exited = new Promise((resolve, reject) => {
-          child.once("exit", (code, signal) => {
-            current.alive = false;
-            current.result = { code, signal };
-            resolve(current.result);
-          });
-          child.once("error", (error) => {
-            current.alive = false;
-            reject(error);
-          });
-        });
-        current.exited.catch(() => {});
-        for (const stream of [child.stdout, child.stderr]) {
-          stream?.on("data", (chunk) => {
-            appendFile(configuration.logPath, chunk).catch(() => {});
-          });
+      let request;
+      try {
+        request = await readJson(stopPath);
+        incompleteStopRequest = false;
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        if (!incompleteStopRequest) await log("stop-request-incomplete");
+        incompleteStopRequest = true;
+        request = null;
+      }
+      if (matchesRequest(request, configuration)) {
+        await stopChild();
+        await writeFile(receiptPath, `${JSON.stringify({
+          installationId: configuration.installationId,
+          generation: configuration.generation,
+          childStopped: true,
+          stoppedAt: new Date().toISOString(),
+        })}\n`, { mode: 0o600 });
+        await log("stopped", `generation=${configuration.generation}`);
+        return { stopped: true, childStopped: true };
+      }
+      if (active && !active.alive) {
+        await log("watcher-exit", `code=${active.result?.code ?? "unknown"}`);
+        active = null;
+      }
+      const cdpReady = await cdpReadyImplementation(configuration.remoteDebuggingPort);
+      if (active && !cdpReady) {
+        await log("cdp-lost", "stopping watcher");
+        await stopChild();
+      }
+      if (!active) {
+        let reason = null;
+        if (!cdpReady) {
+          reason = checkPortHolder(configuration.remoteDebuggingPort) ??
+            "waiting for Paseo loopback CDP";
+        } else {
+          portHolderPort = null;
+          const watcher = await watcherLockImplementation(configuration.remoteDebuggingPort);
+          if (watcher.active) reason = "another watcher owns the port";
+          else if (watcher.error) reason = `watcher lock cannot be read: ${watcher.error}`;
         }
-        active = current;
-        lastWaitingReason = null;
-        await log("watcher-start", `pid=${child.pid ?? "test"} port=${configuration.remoteDebuggingPort}`);
+        if (reason) {
+          if (reason !== lastWaitingReason) await log("wait", reason);
+          lastWaitingReason = reason;
+        } else {
+          const child = spawnWatcherImplementation(configuration);
+          const current = { child, generation: configuration.generation, alive: true, result: null };
+          current.exited = new Promise((resolve, reject) => {
+            child.once("exit", (code, signal) => {
+              current.alive = false;
+              current.result = { code, signal };
+              resolve(current.result);
+            });
+            child.once("error", (error) => {
+              current.alive = false;
+              reject(error);
+            });
+          });
+          current.exited.catch(() => {});
+          for (const stream of [child.stdout, child.stderr]) {
+            stream?.on("data", (chunk) => {
+              appendFile(configuration.logPath, chunk).catch(() => {});
+            });
+          }
+          active = current;
+          lastWaitingReason = null;
+          await log("watcher-start", `pid=${child.pid ?? "test"} port=${configuration.remoteDebuggingPort}`);
+        }
       }
+      await delay(pollIntervalMilliseconds);
     }
-    await delay(pollIntervalMilliseconds);
   }
 }
 
@@ -228,6 +250,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const system = createWindowsSystem();
   runWindowsGuardian(process.argv[2], {
     portListenerImplementation: (port) => system.getPortListener(port),
+    socketHoldersImplementation: (port, options) => system.findSocketHolders(port, options),
   }).catch((error) => {
     process.stderr.write(`[paseo-skin] Guardian failed: ${error.message}\n`);
     process.exitCode = 1;

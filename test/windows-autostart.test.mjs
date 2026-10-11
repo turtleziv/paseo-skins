@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -11,6 +11,7 @@ import net from "node:net";
 import {
   classifyPortListener,
   collectWindowsAutostartStatus,
+  createWindowsSystem,
   installWindowsAutostart,
   portAcceptsConnections,
   uninstallWindowsAutostart,
@@ -228,6 +229,67 @@ test("Windows status reports a CDP port held by an exited or foreign process", a
   assert.equal((await collectWindowsAutostartStatus(options)).problem, null);
   options.system.getPortListener = async () => { throw new Error("powershell unavailable"); };
   assert.equal((await collectWindowsAutostartStatus(options)).problem, null);
+});
+
+test("Windows status names the live processes that inherited an orphaned CDP socket", async (context) => {
+  const options = await fixture(context);
+  await installWindowsAutostart(options);
+  let holderLookups = 0;
+  options.system.findSocketHolders = async (port) => {
+    assert.equal(port, 9224);
+    holderLookups += 1;
+    return [{ pid: 61660, name: "cmd" }, { pid: 4476, name: "tail" }];
+  };
+  options.system.getPortListener = async () => ({ pid: 28084, alive: false, name: null });
+  const orphaned = await collectWindowsAutostartStatus(options);
+  assert.match(orphaned.problem, /28084/);
+  assert.match(orphaned.problem, /cmd \(61660\), tail \(4476\)/);
+  assert.equal(holderLookups, 1);
+
+  options.system.getPortListener = async () => ({ pid: 73020, alive: true, name: "Paseo" });
+  assert.equal((await collectWindowsAutostartStatus(options)).problem, null);
+  assert.equal(holderLookups, 1);
+
+  options.system.getPortListener = async () => ({ pid: 28084, alive: false, name: null });
+  options.system.findSocketHolders = async () => { throw new Error("lookup timed out"); };
+  const unnamed = await collectWindowsAutostartStatus(options);
+  assert.match(unnamed.problem, /exited process 28084/);
+  assert.match(unnamed.problem, /holder lookup failed: lookup timed out/);
+});
+
+test("Windows socket holder lookup tells the script the owner has exited", async () => {
+  let call = null;
+  const system = createWindowsSystem({
+    environment: { SystemRoot: "C:\\Windows" },
+    executeFileImplementation: async (file, args, options) => {
+      call = { file, args, options };
+      return { stdout: '[{"pid":61660,"name":"cmd"}]\r\n' };
+    },
+  });
+  assert.deepEqual(await system.findSocketHolders(9224, { ownerExited: true }),
+    [{ pid: 61660, name: "cmd" }]);
+  assert.ok(call.args.includes("-OwnerExited"));
+  assert.equal(call.args[call.args.indexOf("-Port") + 1], "9224");
+  await system.findSocketHolders(9224, { ownerExited: false });
+  assert.ok(!call.args.includes("-OwnerExited"));
+});
+
+test("Windows socket holder lookup finds a real listening process", {
+  skip: process.platform !== "win32",
+  timeout: 90_000,
+}, async (context) => {
+  const child = spawn(process.execPath, ["-e",
+    "const s=require('net').createServer();s.listen(0,'127.0.0.1',()=>console.log(s.address().port));" +
+    "setTimeout(()=>{},60000)"], { stdio: ["ignore", "pipe", "inherit"] });
+  context.after(() => child.kill());
+  const port = Number(await new Promise((resolve) => child.stdout.once("data", resolve)));
+  const holders = await createWindowsSystem().findSocketHolders(port, { ownerExited: true });
+  assert.deepEqual(holders.map((holder) => holder.pid), [child.pid]);
+  const server = net.createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const freePort = server.address().port;
+  await new Promise((resolve) => server.close(resolve));
+  assert.deepEqual(await createWindowsSystem().findSocketHolders(freePort), []);
 });
 
 test("CDP port listener treats a reused PID as an exited owner", () => {

@@ -222,6 +222,57 @@ async function requestStop(stateRoot, current, run) {
   return run;
 }
 
+test("Guardian names the inheritors of an orphaned CDP socket", async (context) => {
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-guardian-holders-"));
+  context.after(() => rm(stateRoot, { recursive: true, force: true }));
+  const current = configuration(stateRoot);
+  const configurationPath = path.join(stateRoot, "windows-autostart.json");
+  await writeFile(configurationPath, JSON.stringify(current));
+  const run = runWindowsGuardian(configurationPath, {
+    pollIntervalMilliseconds: 5,
+    portCheckIntervalMilliseconds: 0,
+    cdpReadyImplementation: async () => false,
+    portListenerImplementation: async () => ({ pid: 28084, alive: false, name: null }),
+    socketHoldersImplementation: async (port, options) => {
+      assert.equal(port, 9224);
+      assert.equal(options.ownerExited, true);
+      lookups += 1;
+      return [{ pid: 61660, name: "cmd" }];
+    },
+  });
+  let lookups = 0;
+  try {
+    await waitUntil(() => logIncludes(current.logPath, "cmd (61660)"));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(lookups, 1, "the holder list for one orphaned listener is looked up once");
+  } finally {
+    await requestStop(stateRoot, current, run);
+  }
+});
+
+test("Guardian cancels a pending holder lookup when it stops", async (context) => {
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-guardian-abort-holders-"));
+  context.after(() => rm(stateRoot, { recursive: true, force: true }));
+  const current = configuration(stateRoot);
+  const configurationPath = path.join(stateRoot, "windows-autostart.json");
+  await writeFile(configurationPath, JSON.stringify(current));
+  let signal = null;
+  const run = runWindowsGuardian(configurationPath, {
+    pollIntervalMilliseconds: 5,
+    portCheckIntervalMilliseconds: 0,
+    cdpReadyImplementation: async () => false,
+    portListenerImplementation: async () => ({ pid: 28084, alive: false, name: null }),
+    socketHoldersImplementation: (port, options) => {
+      signal = options.signal;
+      return new Promise(() => {});
+    },
+  });
+  await waitUntil(() => signal !== null);
+  assert.equal(signal.aborted, false);
+  await requestStop(stateRoot, current, run);
+  assert.equal(signal.aborted, true);
+});
+
 test("Guardian honours a stop request while a port check is still pending", async (context) => {
   const stateRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-guardian-pending-port-"));
   context.after(() => rm(stateRoot, { recursive: true, force: true }));
