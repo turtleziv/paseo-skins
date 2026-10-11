@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { appendFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -122,7 +123,59 @@ export function createWindowsSystem({
     async unregisterTask(taskName) {
       await run(`Unregister-ScheduledTask -TaskName ${powershellLiteral(taskName)} -TaskPath '\\' -Confirm:$false -ErrorAction Stop`);
     },
+    async getPortListener(port) {
+      if (!Number.isInteger(port)) throw new Error("Invalid CDP port");
+      if (!(await portAcceptsConnections(port))) return null;
+      const output = await run(
+        `$c=Get-NetTCPConnection -State Listen -LocalAddress 127.0.0.1 -LocalPort ${port} ` +
+        "-ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $c){Write-Output 'null'}else{" +
+        "$p=Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue; $s=$null; " +
+        "if($p){try{$s=([DateTimeOffset]$p.StartTime).ToUnixTimeMilliseconds()}catch{}}; " +
+        "[pscustomobject]@{pid=[int]$c.OwningProcess;" +
+        "socketCreatedMs=([DateTimeOffset]$c.CreationTime).ToUnixTimeMilliseconds();" +
+        "processStartMs=$s;name=$(if($p){$p.ProcessName}else{$null})} | ConvertTo-Json -Compress}",
+      );
+      return classifyPortListener(JSON.parse(output));
+    },
   };
+}
+
+// The socket CreationTime is truncated to whole seconds, so the genuine owner may appear to
+// start up to a second after it. A process that started later than that only reused the PID.
+export function classifyPortListener(raw) {
+  if (!raw) return null;
+  const alive = Number.isFinite(raw.processStartMs) &&
+    raw.processStartMs < raw.socketCreatedMs + 1_000;
+  return { pid: raw.pid, alive, name: alive ? raw.name ?? null : null };
+}
+
+// Connection refused means nothing listens, so the PowerShell owner query can be skipped.
+// An orphaned listener still completes the TCP handshake in the kernel.
+export function portAcceptsConnections(port, timeoutMilliseconds = 1_000) {
+  return new Promise((resolve) => {
+    const socket = net.connect(port, "127.0.0.1");
+    const finish = (value) => {
+      socket.destroy();
+      resolve(value);
+    };
+    socket.setTimeout(timeoutMilliseconds, () => finish(true));
+    socket.once("connect", () => finish(true));
+    socket.once("error", (error) => finish(error.code !== "ECONNREFUSED"));
+  });
+}
+
+// A dead owner means the old Paseo was ended (e.g. by an update) while a surviving child
+// inherited its listening socket, so the new Paseo cannot bind the port.
+export function describeCdpPortHolder(listener, port) {
+  if (!listener) return null;
+  if (!listener.alive) {
+    return `CDP port ${port} is held by exited process ${listener.pid}; a leftover child of the old ` +
+      "Paseo still owns the socket — end leftover processes, then restart Paseo";
+  }
+  if (!/paseo/i.test(listener.name ?? "")) {
+    return `CDP port ${port} is held by ${listener.name ?? "unknown"} (pid ${listener.pid}), not Paseo`;
+  }
+  return null;
 }
 
 function validateThemeArguments(themeArguments) {
@@ -270,6 +323,15 @@ export async function collectWindowsAutostartStatus({
   const ownsTask = state.configuration
     ? ownedTask(state.task, state.configuration, state.files.configurationPath)
     : false;
+  let portProblem = null;
+  if (state.configuration && system.getPortListener) {
+    try {
+      const port = state.configuration.remoteDebuggingPort;
+      portProblem = describeCdpPortHolder(await system.getPortListener(port), port);
+    } catch {
+      portProblem = null;
+    }
+  }
   return {
     supported: true,
     cdpEnvLoaded: Boolean(state.configuration && state.userFlags === state.configuration.ownedFlags),
@@ -279,7 +341,7 @@ export async function collectWindowsAutostartStatus({
     guardianLabel: state.name,
     configurationPath: state.files.configurationPath,
     logPath: state.files.logPath,
-    problem: state.task && !ownsTask ? "Guardian task is not owned by this installation" : null,
+    problem: state.task && !ownsTask ? "Guardian task is not owned by this installation" : portProblem,
   };
 }
 

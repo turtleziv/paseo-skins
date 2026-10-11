@@ -204,3 +204,134 @@ test("Guardian stops an idle watcher when Paseo closes and restarts it when Pase
   }
   assert.equal(stops, 2);
 });
+
+async function logIncludes(logPath, text) {
+  try {
+    return (await readFile(logPath, "utf8")).includes(text);
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function requestStop(stateRoot, current, run) {
+  await writeFile(path.join(stateRoot, "windows-guardian.stop"), JSON.stringify({
+    installationId: current.installationId,
+    generation: current.generation,
+  }));
+  return run;
+}
+
+test("Guardian honours a stop request while a port check is still pending", async (context) => {
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-guardian-pending-port-"));
+  context.after(() => rm(stateRoot, { recursive: true, force: true }));
+  const current = configuration(stateRoot);
+  const configurationPath = path.join(stateRoot, "windows-autostart.json");
+  await writeFile(configurationPath, JSON.stringify(current));
+  let started = false;
+  const run = runWindowsGuardian(configurationPath, {
+    pollIntervalMilliseconds: 5,
+    portCheckIntervalMilliseconds: 0,
+    cdpReadyImplementation: async () => false,
+    portListenerImplementation: () => {
+      started = true;
+      return new Promise(() => {});
+    },
+  });
+  await waitUntil(() => started);
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Guardian blocked on the port check")), 1_000);
+  });
+  try {
+    assert.deepEqual(await Promise.race([requestStop(stateRoot, current, run), timeout]),
+      { stopped: true, childStopped: true });
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+test("Guardian logs a failed port check instead of reporting a clean port", async (context) => {
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-guardian-failed-port-"));
+  context.after(() => rm(stateRoot, { recursive: true, force: true }));
+  const current = configuration(stateRoot);
+  const configurationPath = path.join(stateRoot, "windows-autostart.json");
+  await writeFile(configurationPath, JSON.stringify(current));
+  const run = runWindowsGuardian(configurationPath, {
+    pollIntervalMilliseconds: 5,
+    portCheckIntervalMilliseconds: 0,
+    cdpReadyImplementation: async () => false,
+    portListenerImplementation: async () => { throw new Error("NetTCPIP unavailable"); },
+  });
+  try {
+    await waitUntil(() => logIncludes(current.logPath, "port check failed: NetTCPIP unavailable"));
+  } finally {
+    await requestStop(stateRoot, current, run);
+  }
+});
+
+test("Guardian re-checks the port holder when the configured port changes", async (context) => {
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-guardian-port-switch-"));
+  context.after(() => rm(stateRoot, { recursive: true, force: true }));
+  const initial = configuration(stateRoot);
+  const replacement = { ...configuration(stateRoot, "c".repeat(32)),
+    remoteDebuggingPort: 9300, ownedFlags: flagsForPort(9300) };
+  const configurationPath = path.join(stateRoot, "windows-autostart.json");
+  await writeFile(configurationPath, JSON.stringify(initial));
+  let current = initial;
+  const run = runWindowsGuardian(configurationPath, {
+    pollIntervalMilliseconds: 5,
+    portCheckIntervalMilliseconds: 60_000,
+    cdpReadyImplementation: async () => false,
+    portListenerImplementation: async (port) =>
+      (port === 9224 ? { pid: 28084, alive: false, name: null } : null),
+  });
+  try {
+    await waitUntil(() => logIncludes(current.logPath, "exited process 28084"));
+    await writeWindowsConfiguration(configurationPath, replacement);
+    current = replacement;
+    await waitUntil(() => logIncludes(current.logPath, "guardian-wait waiting for Paseo loopback CDP"));
+  } finally {
+    await requestStop(stateRoot, current, run);
+  }
+});
+
+test("Guardian logs which process holds the CDP port while Paseo CDP is unreachable", async (context) => {
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-guardian-held-port-"));
+  context.after(() => rm(stateRoot, { recursive: true, force: true }));
+  const current = configuration(stateRoot);
+  const configurationPath = path.join(stateRoot, "windows-autostart.json");
+  await writeFile(configurationPath, JSON.stringify(current));
+  let listener = { pid: 28084, alive: false, name: null };
+  let checks = 0;
+  const run = runWindowsGuardian(configurationPath, {
+    pollIntervalMilliseconds: 5,
+    portCheckIntervalMilliseconds: 0,
+    cdpReadyImplementation: async () => false,
+    portListenerImplementation: async (port) => {
+      assert.equal(port, 9224);
+      checks += 1;
+      return listener;
+    },
+  });
+  try {
+    await waitUntil(async () => {
+      try {
+        return /guardian-wait .*9224.*28084/.test(await readFile(current.logPath, "utf8"));
+      } catch (error) {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      }
+    });
+    listener = null;
+    await waitUntil(async () => (await readFile(current.logPath, "utf8")).includes(
+      "guardian-wait waiting for Paseo loopback CDP"));
+    assert.ok(checks >= 2);
+  } finally {
+    await writeFile(path.join(stateRoot, "windows-guardian.stop"), JSON.stringify({
+      installationId: current.installationId,
+      generation: current.generation,
+    }));
+    await run;
+  }
+});

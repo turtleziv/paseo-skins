@@ -12,7 +12,11 @@ import {
   listCdpTargets,
   validateCdpWebSocketUrl,
 } from "./cdp-client.mjs";
-import { validateWindowsConfiguration } from "./windows-autostart.mjs";
+import {
+  createWindowsSystem,
+  describeCdpPortHolder,
+  validateWindowsConfiguration,
+} from "./windows-autostart.mjs";
 import { readWatcherLock } from "./watcher-lock.mjs";
 
 async function readJson(filePath) {
@@ -76,6 +80,8 @@ export async function runWindowsGuardian(configurationPath, {
   cdpReadyImplementation = paseoCdpReady,
   watcherLockImplementation = readWatcherLock,
   spawnWatcherImplementation = launchWatcher,
+  portListenerImplementation = async () => null,
+  portCheckIntervalMilliseconds = 30_000,
 } = {}) {
   if (!path.isAbsolute(configurationPath)) throw new Error("Guardian configuration path must be absolute");
   const stateRoot = path.dirname(configurationPath);
@@ -84,6 +90,34 @@ export async function runWindowsGuardian(configurationPath, {
   let active = null;
   let lastWaitingReason = null;
   let incompleteStopRequest = false;
+  // The owner query runs in the background so a slow PowerShell never delays stop requests;
+  // each poll reads the latest settled answer for the current port.
+  let portHolder = null;
+  let portHolderPort = null;
+  let pendingPortCheck = null;
+  let lastPortCheck = -Infinity;
+  const checkPortHolder = (port) => {
+    if (port !== portHolderPort) {
+      portHolder = null;
+      portHolderPort = port;
+      lastPortCheck = -Infinity;
+    }
+    if (!pendingPortCheck && Date.now() - lastPortCheck >= portCheckIntervalMilliseconds) {
+      lastPortCheck = Date.now();
+      const check = Promise.resolve()
+        .then(() => portListenerImplementation(port))
+        .then((listener) => describeCdpPortHolder(listener, port),
+          (error) => `waiting for Paseo loopback CDP (port check failed: ${error.message})`)
+        .then((holder) => {
+          if (portHolderPort === port) portHolder = holder;
+        })
+        .finally(() => {
+          if (pendingPortCheck === check) pendingPortCheck = null;
+        });
+      pendingPortCheck = check;
+    }
+    return portHolder;
+  };
   const log = async (event, details = "") => {
     const configuration = await readConfiguration(configurationPath);
     await appendFile(configuration.logPath,
@@ -150,8 +184,10 @@ export async function runWindowsGuardian(configurationPath, {
     if (!active) {
       let reason = null;
       if (!cdpReady) {
-        reason = "waiting for Paseo loopback CDP";
+        reason = checkPortHolder(configuration.remoteDebuggingPort) ??
+          "waiting for Paseo loopback CDP";
       } else {
+        portHolderPort = null;
         const watcher = await watcherLockImplementation(configuration.remoteDebuggingPort);
         if (watcher.active) reason = "another watcher owns the port";
         else if (watcher.error) reason = `watcher lock cannot be read: ${watcher.error}`;
@@ -189,7 +225,10 @@ export async function runWindowsGuardian(configurationPath, {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  runWindowsGuardian(process.argv[2]).catch((error) => {
+  const system = createWindowsSystem();
+  runWindowsGuardian(process.argv[2], {
+    portListenerImplementation: (port) => system.getPortListener(port),
+  }).catch((error) => {
     process.stderr.write(`[paseo-skin] Guardian failed: ${error.message}\n`);
     process.exitCode = 1;
   });

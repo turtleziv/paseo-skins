@@ -6,10 +6,15 @@ import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
+import net from "node:net";
+
 import {
+  classifyPortListener,
   collectWindowsAutostartStatus,
   installWindowsAutostart,
+  portAcceptsConnections,
   uninstallWindowsAutostart,
+  writeWindowsConfiguration,
 } from "../src/windows-autostart.mjs";
 import { collectAutostartStatus, installAutostart, uninstallAutostart } from "../src/autostart.mjs";
 
@@ -82,8 +87,8 @@ test("Windows install creates a current-user Guardian and uninstall restores pri
       const request = JSON.parse(await readFile(path.join(options.stateRoot, "windows-guardian.stop"), "utf8"));
       if (options.system.task && request.installationId === configured.installationId) {
         options.system.task.state = "Ready";
-        await writeFile(path.join(options.stateRoot, "windows-guardian.stopped"),
-          JSON.stringify({ ...request, childStopped: true }));
+        await writeWindowsConfiguration(path.join(options.stateRoot, "windows-guardian.stopped"),
+          { ...request, childStopped: true });
       }
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
@@ -197,6 +202,55 @@ test("Windows uninstall refuses to orphan an active watcher after Guardian stops
   }), /watcher is still active/);
   assert.equal(options.system.flags, "--remote-debugging-address=127.0.0.1 --remote-debugging-port=9224");
   assert.ok(options.system.task);
+});
+
+test("Windows status reports a CDP port held by an exited or foreign process", async (context) => {
+  const options = await fixture(context);
+  await installWindowsAutostart(options);
+  options.system.getPortListener = async (port) => {
+    assert.equal(port, 9224);
+    return { pid: 28084, alive: false, name: null };
+  };
+  const orphaned = await collectWindowsAutostartStatus(options);
+  assert.equal(orphaned.guardianRunning, true);
+  assert.match(orphaned.problem, /9224/);
+  assert.match(orphaned.problem, /28084/);
+  assert.match(orphaned.problem, /exited/);
+
+  options.system.getPortListener = async () => ({ pid: 512, alive: true, name: "OtherApp" });
+  const foreign = await collectWindowsAutostartStatus(options);
+  assert.match(foreign.problem, /OtherApp/);
+  assert.match(foreign.problem, /512/);
+
+  options.system.getPortListener = async () => ({ pid: 73020, alive: true, name: "Paseo" });
+  assert.equal((await collectWindowsAutostartStatus(options)).problem, null);
+  options.system.getPortListener = async () => null;
+  assert.equal((await collectWindowsAutostartStatus(options)).problem, null);
+  options.system.getPortListener = async () => { throw new Error("powershell unavailable"); };
+  assert.equal((await collectWindowsAutostartStatus(options)).problem, null);
+});
+
+test("CDP port listener treats a reused PID as an exited owner", () => {
+  const socketCreated = Date.parse("2026-10-11T07:58:24Z");
+  assert.deepEqual(classifyPortListener({ pid: 28084, socketCreatedMs: socketCreated,
+    processStartMs: socketCreated + 3_600_000, name: "svchost" }),
+  { pid: 28084, alive: false, name: null });
+  assert.deepEqual(classifyPortListener({ pid: 73020, socketCreatedMs: socketCreated,
+    processStartMs: socketCreated + 900, name: "Paseo" }),
+  { pid: 73020, alive: true, name: "Paseo" });
+  assert.deepEqual(classifyPortListener({ pid: 28084, socketCreatedMs: socketCreated,
+    processStartMs: null, name: null }),
+  { pid: 28084, alive: false, name: null });
+  assert.equal(classifyPortListener(null), null);
+});
+
+test("TCP pre-check tells a listening port from a refused one", async (context) => {
+  const server = net.createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  assert.equal(await portAcceptsConnections(port), true);
+  await new Promise((resolve) => server.close(resolve));
+  assert.equal(await portAcceptsConnections(port), false);
 });
 
 test("public autostart dispatches Windows install, status, and uninstall", async (context) => {
