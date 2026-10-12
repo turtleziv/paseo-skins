@@ -13,7 +13,6 @@ import {
   collectWindowsAutostartStatus,
   createWindowsSystem,
   installWindowsAutostart,
-  portAcceptsConnections,
   uninstallWindowsAutostart,
   writeWindowsConfiguration,
 } from "../src/windows-autostart.mjs";
@@ -306,13 +305,83 @@ test("CDP port listener treats a reused PID as an exited owner", () => {
   assert.equal(classifyPortListener(null), null);
 });
 
-test("TCP pre-check tells a listening port from a refused one", async (context) => {
+// Netstat lines copied from the 2026-10-13 orphan: the listener refused connections, so only the
+// socket table shows it.
+const ORPHAN_NETSTAT = [
+  "",
+  "Active Connections",
+  "",
+  "  Proto  Local Address          Foreign Address        State           PID",
+  "  TCP    127.0.0.1:9224         0.0.0.0:0              LISTENING       72740",
+  "  TCP    127.0.0.1:52508        127.0.0.1:9224         SYN_SENT        18676",
+  "  TCP    127.0.0.1:19224        0.0.0.0:0              LISTENING       4120",
+].join("\r\n");
+
+function fakeWindowsCommands(netstat) {
+  const calls = [];
+  const system = createWindowsSystem({
+    environment: { SystemRoot: "C:\\Windows" },
+    executeFileImplementation: async (file, args) => {
+      calls.push(path.win32.basename(file).toLowerCase());
+      if (/netstat/i.test(file)) return { stdout: netstat };
+      return { stdout: JSON.stringify({ pid: 72740, socketCreatedMs: 1_791_000_000_000,
+        processStartMs: null, name: null }) };
+    },
+  });
+  return { system, calls };
+}
+
+test("Windows port listener finds a listener that refuses connections", async () => {
+  const { system, calls } = fakeWindowsCommands(ORPHAN_NETSTAT);
+  assert.deepEqual(await system.getPortListener(9224), { pid: 72740, alive: false, name: null });
+  assert.deepEqual(calls, ["netstat.exe", "powershell.exe"]);
+});
+
+test("Windows port listener reads listening rows without depending on the display language", async () => {
+  const localized = "  TCP    127.0.0.1:9224         0.0.0.0:0              ABHÖREN         72740\r\n";
+  const wildcard = "  TCP    0.0.0.0:9224           0.0.0.0:0              LISTENING       512\r\n";
+  for (const table of [localized, wildcard]) {
+    const { system, calls } = fakeWindowsCommands(table);
+    assert.deepEqual(await system.getPortListener(9224), { pid: 72740, alive: false, name: null });
+    assert.deepEqual(calls, ["netstat.exe", "powershell.exe"]);
+  }
+});
+
+test("Windows port listener falls back to PowerShell when netstat fails", async () => {
+  const calls = [];
+  const system = createWindowsSystem({
+    environment: { SystemRoot: "C:\\Windows" },
+    executeFileImplementation: async (file) => {
+      calls.push(path.win32.basename(file).toLowerCase());
+      if (/netstat/i.test(file)) throw new Error("netstat blocked by policy");
+      return { stdout: "null" };
+    },
+  });
+  assert.equal(await system.getPortListener(9224), null);
+  assert.deepEqual(calls, ["netstat.exe", "powershell.exe"]);
+});
+
+test("Windows port listener reports this process for a real loopback listener", {
+  skip: process.platform !== "win32",
+  timeout: 60_000,
+}, async () => {
   const server = net.createServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address();
-  assert.equal(await portAcceptsConnections(port), true);
-  await new Promise((resolve) => server.close(resolve));
-  assert.equal(await portAcceptsConnections(port), false);
+  try {
+    const listener = await createWindowsSystem().getPortListener(server.address().port);
+    assert.equal(listener.pid, process.pid);
+    assert.equal(listener.alive, true);
+    assert.match(listener.name, /node/i);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Windows port listener skips PowerShell when the socket table has no listener", async () => {
+  const { system, calls } = fakeWindowsCommands(ORPHAN_NETSTAT);
+  assert.equal(await system.getPortListener(9225), null);
+  assert.equal(await system.getPortListener(1922), null);
+  assert.deepEqual(calls, ["netstat.exe", "netstat.exe"]);
 });
 
 test("public autostart dispatches Windows install, status, and uninstall", async (context) => {

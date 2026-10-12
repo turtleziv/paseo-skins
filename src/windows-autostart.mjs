@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { appendFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -34,9 +33,12 @@ function taskArguments(guardianPath, configurationPath) {
   return `"${guardianPath}" "${configurationPath}"`;
 }
 
+function systemRoot(environment) {
+  return environment.SystemRoot || environment.WINDIR || "C:\\Windows";
+}
+
 function scriptHostPath(environment = process.env) {
-  return path.win32.join(environment.SystemRoot || environment.WINDIR || "C:\\Windows",
-    "System32", "wscript.exe");
+  return path.win32.join(systemRoot(environment), "System32", "wscript.exe");
 }
 
 function hiddenTaskArguments(configuration, configurationPath) {
@@ -50,10 +52,7 @@ function hiddenTaskArguments(configuration, configurationPath) {
 }
 
 function powershellPath(environment) {
-  return path.win32.join(
-    environment.SystemRoot || environment.WINDIR || "C:\\Windows",
-    "System32", "WindowsPowerShell", "v1.0", "powershell.exe",
-  );
+  return path.win32.join(systemRoot(environment), "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 }
 
 export function createWindowsSystem({
@@ -126,9 +125,19 @@ export function createWindowsSystem({
     },
     async getPortListener(port) {
       if (!Number.isInteger(port)) throw new Error("Invalid CDP port");
-      if (!(await portAcceptsConnections(port))) return null;
+      let table = null;
+      try {
+        ({ stdout: table } = await executeFileImplementation(
+          path.win32.join(systemRoot(environment), "System32", "netstat.exe"),
+          ["-ano", "-p", "TCP"],
+          { timeout: 15_000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
+        ));
+      } catch {
+        table = null;   // the gate is an optimisation; without it the PowerShell query decides
+      }
+      if (table !== null && !socketTableListens(table, port)) return null;
       const output = await run(
-        `$c=Get-NetTCPConnection -State Listen -LocalAddress 127.0.0.1 -LocalPort ${port} ` +
+        `$c=Get-NetTCPConnection -State Listen -LocalAddress 127.0.0.1,0.0.0.0 -LocalPort ${port} ` +
         "-ErrorAction SilentlyContinue | Select-Object -First 1; if($null -eq $c){Write-Output 'null'}else{" +
         "$p=Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue; $s=$null; " +
         "if($p){try{$s=([DateTimeOffset]$p.StartTime).ToUnixTimeMilliseconds()}catch{}}; " +
@@ -161,18 +170,15 @@ export function classifyPortListener(raw) {
   return { pid: raw.pid, alive, name: alive ? raw.name ?? null : null };
 }
 
-// Connection refused means nothing listens, so the PowerShell owner query can be skipped.
-// An orphaned listener still completes the TCP handshake in the kernel.
-export function portAcceptsConnections(port, timeoutMilliseconds = 1_000) {
-  return new Promise((resolve) => {
-    const socket = net.connect(port, "127.0.0.1");
-    const finish = (value) => {
-      socket.destroy();
-      resolve(value);
-    };
-    socket.setTimeout(timeoutMilliseconds, () => finish(true));
-    socket.once("connect", () => finish(true));
-    socket.once("error", (error) => finish(error.code !== "ECONNREFUSED"));
+// The cheap gate before the PowerShell owner query reads the socket table, not a connection
+// attempt: an orphaned CDP listener left by an exited Paseo refuses connections, so a refused
+// connect cannot mean "nothing listens". The State column is localized, so a listening IPv4 row
+// is recognised by its ASCII foreign address 0.0.0.0:0.
+function socketTableListens(table, port) {
+  return table.split(/\r?\n/).some((line) => {
+    const [protocol, local, foreign] = line.trim().split(/\s+/);
+    return protocol === "TCP" && foreign === "0.0.0.0:0" &&
+      (local === `127.0.0.1:${port}` || local === `0.0.0.0:${port}`);
   });
 }
 
