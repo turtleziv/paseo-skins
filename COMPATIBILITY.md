@@ -8,7 +8,7 @@ Paseo Skins 通过运行时 DOM 与 CDP target 能力判断兼容性，不只比
 | 0.5.0-beta.2 | macOS arm64 | 2026-08-20 | Live `status`, `verify`, 21-page/5-hover renderer audit, skin version 17, long diff counters with trailing workspace action, 101 automated tests |
 | 0.3.0 | macOS arm64 | 2026-08-09 | Live `status` and `verify`, skin version 12, workspace/schedules/sessions/new SPA routes, workspace menu and hover-in/hover-out screenshots, 74 automated tests |
 
-Windows WebP `create`／`inspect`、社区主题重复加载、`apply --persist`、Paseo 重开后自动恢复与配置还原，已在本地 `windows-support` 分支的 Windows x64 Paseo 0.10.3 隔离实例实测。fork commit [`73bf980`](https://github.com/turtleziv/paseo-skins/commit/73bf980f7a16232c364961d9a8ebcb7db64f114a) 的 [CI run 37476897961](https://github.com/turtleziv/paseo-skins/actions/runs/37476897961) 首轮 Windows Node 22 遇到既有 Guardian 测试的计时竞态，重跑失败 job 后五项 matrix 成功。该结果仅证明 fork commit；上游合并后的发布包和新版本 Paseo 仍需单独验证。
+Windows WebP `create`／`inspect`、社区主题重复加载、`apply --persist`、Paseo 重开后自动恢复与配置还原，已在本地 `windows-support` 分支的 Windows x64 Paseo 0.10.3 隔离实例实测。fork commit [`73bf980`](https://github.com/turtleziv/paseo-skins/commit/73bf980f7a16232c364961d9a8ebcb7db64f114a) 的 [CI run 37476897961](https://github.com/turtleziv/paseo-skins/actions/runs/37476897961) 首轮 Windows Node 22 遇到既有 Guardian 测试的计时竞态，重跑失败 job 后五项 matrix 成功。该结果仅证明 fork commit；其他 Windows 电脑和新版本 Paseo 仍需单独验证。
 
 此前 macOS 兼容审计使用本机 Paseo `0.5.0-beta.2` 与回环 CDP `127.0.0.1:9224`。新版 workspace 行使用 `sidebar-workspace-trailing-scrim`，主题隐藏该原生遮罩并为统计区预留 24px；真实 `+27.5k/-17.4k` 行在 hover 后与更多按钮的横向重叠为 0px，`auxiliaryLayerIssues` 与 `workspaceActionOverlaps` 均为空。renderer audit 覆盖 21 类页面和 5 类 hover，原路径与侧栏滚动位置完整恢复。
 
@@ -32,4 +32,4 @@ Windows WebP `create`／`inspect`、社区主题重复加载、`apply --persist`
 4. 停止 watcher，运行 `paseo-skin reset`，确认原生 UI 恢复。
 5. 只有上述证据全部通过，才更新本表的版本和日期。
 
-Windows 真机证据仅适用于 `windows-support` 分支和 Paseo 0.10.3。独立任务中，Task Scheduler 的 `RestartOnFailure` 设置没有在非零退出后触发重启；本分支改由隐藏启动器在 Node 非零退出后重试，并已在正式 Guardian Node 遭外部终止后验证。逐页冷注入已在隔离的双 workspace profile 上验证，详见 `docs/RENDERER_STYLE_SAFETY.md`。各 commit 的 GitHub Actions 结果须分别核对，本机测试不能代替云端收据。隐藏启动器或排程本身遭外部终止后的恢复未验证。此 PR 的网站与 Agent Skill 指向上游统一入口，须等合并发布后才成为该入口的实际行为；Linux 和 Intel Mac 当前均未声明支持。
+Windows 真机证据仅适用于 `windows-support` 分支和 Paseo 0.10.3。独立任务中，Task Scheduler 的 `RestartOnFailure` 设置没有在非零退出后触发重启；本分支改由隐藏启动器在 Node 非零退出后重试，并已在正式 Guardian Node 遭外部终止后验证。逐页冷注入已在隔离的双 workspace profile 上验证，详见 `docs/RENDERER_STYLE_SAFETY.md`。各 commit 的 GitHub Actions 结果须分别核对，本机测试不能代替云端收据。隐藏启动器或排程本身遭外部终止后的恢复未验证。本分支不向上游提交 PR：上游公开网站与上游 Agent Skill 不含 Windows 流程，Windows 使用者须依本分支 README 与 `skills/paseo-skins/SKILL.md` 中指向本 fork 的命令；Linux 和 Intel Mac 当前均未声明支持。

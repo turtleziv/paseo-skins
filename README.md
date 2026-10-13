@@ -10,6 +10,8 @@
 
 一个面向 Paseo 的非官方开源主题皮肤画廊、Agent Skill 与本地加载器。网页负责主题预览和主题包直下；Skill 负责安全工作流，CLI 负责校验声明式主题，并通过 `127.0.0.1` 上的 Chrome DevTools Protocol（CDP）只向 `paseo://app/` 渲染窗口注入样式。
 
+> **Windows fork**：本分支是 [`turtleziv/paseo-skins#windows-support`](https://github.com/turtleziv/paseo-skins/tree/windows-support)，在上游 [`huangguang1999/paseo-skins`](https://github.com/huangguang1999/paseo-skins) 之上加入 Windows 支持，不向上游提交 PR。主题目录、主题清单与公开网站仍由上游提供；公开网站的复制命令和 Agent Skill 来自上游 `main`，只适用 macOS。Windows 请使用本 README 的 [Windows](#windows已实测-paseo-0103) 一节与本分支 `skills/paseo-skins/SKILL.md` 中指向本 fork 的命令。
+
 **[在线浏览 Paseo 主题](https://huangguang1999.github.io/paseo-skins/gallery/)** · **[打开主题 Studio](https://huangguang1999.github.io/paseo-skins/studio/)** · **[使用快捷 CLI](https://huangguang1999.github.io/paseo-skins/download/)** · **[查看主题文档](https://huangguang1999.github.io/paseo-skins/docs/)**
 
 运行时边界、组件职责和按改动类型划分的验证门禁见 [Architecture](ARCHITECTURE.md)。
@@ -50,7 +52,7 @@ npm run site
 
 ## 一条命令换肤
 
-主题库、模拟器和 [CLI 页面](https://huangguang1999.github.io/paseo-skins/download/) 为每款公开主题提供 Windows PowerShell 与 macOS Terminal 两种复制命令。命令首次运行时用 Git 在用户目录创建固定的 `paseo-skins` checkout、以 `npm ci` 安装依赖，再从该目录执行 `apply <theme-id> --persist`。已有 checkout 时会复用，不自动覆盖本地修改；升级时请在该目录自行运行 `git pull --ff-only` 与 `npm ci`。
+本分支的网站源码为每款公开主题提供 Windows PowerShell 与 macOS Terminal 两种复制命令；上游发布的 [CLI 页面](https://huangguang1999.github.io/paseo-skins/download/) 来自上游 `main`，Windows 请改用下方分步命令。命令首次运行时用 Git 在用户目录创建固定的 `paseo-skins` checkout、以 `npm ci` 安装依赖，再从该目录执行 `apply <theme-id> --persist`。已有 checkout 时会复用，不自动覆盖本地修改；升级时请在该目录自行运行 `git pull --ff-only` 与 `npm ci`。
 
 也可分步执行。macOS Terminal：
 
@@ -61,17 +63,17 @@ npm ci
 node ./src/cli.mjs apply morning-mist --persist
 ```
 
-Windows PowerShell：
+Windows PowerShell（Windows 支持只在本 fork 的 `windows-support` 分支；fork 的 `main` 与上游相同）：
 
 ```powershell
 $p = Join-Path $HOME 'paseo-skins'
-git clone https://github.com/huangguang1999/paseo-skins.git $p
+git clone -b windows-support https://github.com/turtleziv/paseo-skins.git $p
 Set-Location $p
 npm.cmd ci
 node ./src/cli.mjs apply morning-mist --persist
 ```
 
-上述分步示例用于首次安装。目录已存在时先确认其 `origin` 是本项目上游，再从该目录运行 `npm ci`／`npm.cmd ci` 和 `apply`；网站复制命令会自动完成目录存在与来源检查。
+上述分步示例用于首次安装。目录已存在时先确认其 `origin` 与分支（macOS 为上游 `main`，Windows 为本 fork 的 `windows-support`），再从该目录运行 `npm ci`／`npm.cmd ci` 和 `apply`；网站复制命令会自动完成目录存在与来源检查。
 
 `apply` 从同源公开 catalog 解析主题 ID，下载并验证 Theme v2 清单与图片。`--persist` 安装当前用户的 macOS LaunchAgents 或 Windows 登录任务，已有 Guardian 时原位切换主题，并等待 watcher 与 renderer 同时确认新主题。**不要删除固定 checkout**：Guardian 保存其 CLI 绝对路径；npm 的临时 `npx` cache 不适合长期常驻。省略 `--persist` 才使用前台 watcher；手动 watcher 占用端口时，请先在原终端按 `Ctrl+C`。网页不连接或控制本机 Paseo。
 
@@ -79,7 +81,7 @@ node ./src/cli.mjs apply morning-mist --persist
 
 主题卡默认直接下载主题包；希望由 Agent 接管完整验收流程的用户也可以全局安装 Skill：
 
-macOS Terminal：`npx skills add huangguang1999/paseo-skins --skill paseo-skins -g`；Windows PowerShell：`npx.cmd skills add huangguang1999/paseo-skins --skill paseo-skins -g`。
+macOS Terminal：`npx skills add huangguang1999/paseo-skins --skill paseo-skins -g`；Windows PowerShell 需安装本 fork 分支的 Skill：`npx.cmd skills add 'https://github.com/turtleziv/paseo-skins/tree/windows-support/skills/paseo-skins' -g`。
 
 安装后可直接对支持 Agent Skills 的 Codex、Claude Code、Cursor 等工具说“使用 `$paseo-skins` 换成晨雾山水”。Skill 源码位于 `skills/paseo-skins/`，网站同时将它发布为 `https://huangguang1999.github.io/paseo-skins/SKILL.md`，供尚未安装 Skill 的 Agent 临时读取。
 
@@ -176,10 +178,10 @@ npm run autostart:uninstall
 
 ## Windows（已实测 Paseo 0.10.3）
 
-Windows 实机证据目前来自 [`turtleziv/paseo-skins#windows-support`](https://github.com/turtleziv/paseo-skins/tree/windows-support)，详见 `COMPATIBILITY.md`；合并本分支后，下列命令使用同一上游仓库。一次性查看 CLI 或用已公开的图片生成主题，可以在 PowerShell 中运行：
+Windows 支持只存在于本 fork 的 `windows-support` 分支，实机证据详见 `COMPATIBILITY.md`；上游仓库与 fork 的 `main` 都不含 Windows 代码，下列命令因此指定该分支。一次性查看 CLI 或用已公开的图片生成主题，可以在 PowerShell 中运行：
 
 ```powershell
-$package = 'github:huangguang1999/paseo-skins'
+$package = 'github:turtleziv/paseo-skins#windows-support'
 npx.cmd --yes $package --help
 npx.cmd --yes $package create --image 'C:\path\to\public-image.jpg' --name 'My Theme' --id my-theme --output 'C:\path\to\my-theme'
 ```
@@ -190,7 +192,7 @@ npx.cmd --yes $package create --image 'C:\path\to\public-image.jpg' --name 'My T
 
 ```powershell
 $p = Join-Path $HOME 'paseo-skins'
-git clone https://github.com/huangguang1999/paseo-skins.git $p
+git clone -b windows-support https://github.com/turtleziv/paseo-skins.git $p
 Set-Location $p
 npm.cmd ci
 ```

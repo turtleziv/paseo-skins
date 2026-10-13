@@ -7,30 +7,34 @@ description: Safely browse, create, inspect, install, switch, verify, and remove
 
 Use the public theme catalog and the zero-patch CDP loader. Preserve the Paseo executable, `app.asar`, daemon, and agent data.
 
-Choose the host workflow first. The PowerShell workflow has live evidence on Windows x64 with Paseo 0.10.3; the Bash workflow has live evidence on macOS arm64 with older Paseo versions. Read [compatibility evidence](https://github.com/huangguang1999/paseo-skins/blob/main/COMPATIBILITY.md) before claiming another host or version is verified.
+Choose the host workflow first. The PowerShell workflow has live evidence on Windows x64 with Paseo 0.10.3; the Bash workflow has live evidence on macOS arm64 with older Paseo versions. Read [compatibility evidence](https://github.com/turtleziv/paseo-skins/blob/windows-support/COMPATIBILITY.md) before claiming another host or version is verified.
+
+Windows support exists only on the `windows-support` branch of the `turtleziv/paseo-skins` fork; the upstream repository and the fork's `main` contain no Windows code. Use the fork for every Windows command and the upstream repository for macOS.
 
 ## Endpoints
 
 - Catalog: `https://huangguang1999.github.io/paseo-skins/catalog.json`
 - Theme v2 schema: `https://huangguang1999.github.io/paseo-skins/schema/paseo-theme-v2.schema.json`
-- Upstream repository: `https://github.com/huangguang1999/paseo-skins`
-- CLI package for one-off commands on both platforms: `github:huangguang1999/paseo-skins`
+- Upstream repository (macOS): `https://github.com/huangguang1999/paseo-skins`
+- Windows fork branch: `https://github.com/turtleziv/paseo-skins/tree/windows-support`
+- CLI package for one-off macOS commands: `github:huangguang1999/paseo-skins`
+- CLI package for one-off Windows commands: `github:turtleziv/paseo-skins#windows-support`
 - Default CDP endpoint: `127.0.0.1:9224`
 
 ## Windows PowerShell workflow
 
-Use PowerShell, Git, and Node.js 22 or newer. For a one-off read-only command, use the public GitHub package:
+Use PowerShell, Git, and Node.js 22 or newer. For a one-off read-only command, use the fork's Windows branch package:
 
 ```powershell
-$package = 'github:huangguang1999/paseo-skins'
+$package = 'github:turtleziv/paseo-skins#windows-support'
 npx.cmd --yes $package --help
 ```
 
-For user images and a persistent Guardian, use a stable local checkout. If none exists, clone it to a durable path. The Windows task stores absolute CLI and Guardian paths, so npm's disposable `npx` cache is not a persistent install location. If `$p` already exists, verify it is the intended checkout before using it.
+For user images and a persistent Guardian, use a stable local checkout. If none exists, clone it to a durable path. The Windows task stores absolute CLI and Guardian paths, so npm's disposable `npx` cache is not a persistent install location. If `$p` already exists, verify it is a `turtleziv/paseo-skins` checkout on the `windows-support` branch before using it.
 
 ```powershell
 $p = Join-Path $HOME 'paseo-skins'
-git clone https://github.com/huangguang1999/paseo-skins.git $p
+git clone -b windows-support https://github.com/turtleziv/paseo-skins.git $p
 Set-Location $p
 npm.cmd ci
 node .\src\cli.mjs doctor --json
