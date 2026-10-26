@@ -38,30 +38,52 @@ export const RENDERER_STYLE_AUDIT_PAGE_PLAN = Object.freeze([
     Object.freeze({ kind: "host-setting", label, pathSuffix, testIdentifier }),
   ),
   Object.freeze({ kind: "workspace", label: "workspace" }),
-  Object.freeze({ kind: "utility", label: "history", testIdentifier: "sidebar-sessions" }),
-  Object.freeze({ kind: "utility", label: "schedules", testIdentifier: "sidebar-schedules" }),
+  Object.freeze({
+    kind: "utility",
+    label: "history",
+    navigationKey: "history",
+    path: "/sessions",
+    testIdentifier: "sidebar-sessions",
+  }),
+  Object.freeze({
+    commandCenter: Object.freeze({ labels: Object.freeze(["计划", "Schedules"]), query: "schedules" }),
+    kind: "utility",
+    label: "schedules",
+    navigationKey: "schedules",
+    path: "/schedules",
+    testIdentifier: "sidebar-schedules",
+  }),
 ]);
 
 export const RENDERER_STYLE_AUDIT_HOVER_PLAN = Object.freeze([
   Object.freeze({
     label: "sidebar:new-workspace",
+    navigationKey: "new-workspace",
     selectorExpression: `document.querySelector('[data-testid="sidebar-global-new-workspace"]')`,
   }),
   Object.freeze({
     label: "sidebar:history",
+    navigationKey: "history",
     selectorExpression: `document.querySelector('[data-testid="sidebar-sessions"]')`,
   }),
   Object.freeze({
     label: "sidebar:schedules",
+    navigationKey: "schedules",
     selectorExpression: `document.querySelector('[data-testid="sidebar-schedules"]')`,
   }),
   Object.freeze({
     label: "sidebar:workspace-row",
     selectorExpression: `[...document.querySelectorAll('[data-testid^="sidebar-workspace-row-"]')].find((element) => {
       const rectangle = element.getBoundingClientRect();
+      // A row scrolled under the sticky sidebar header is inside the viewport
+      // but its centre belongs to another control, so hit-test it.
       return element.getAttribute('aria-selected') !== 'true' &&
         rectangle.width > 0 && rectangle.height > 0 &&
-        rectangle.top >= 0 && rectangle.bottom <= innerHeight;
+        rectangle.top >= 0 && rectangle.bottom <= innerHeight &&
+        element.contains(document.elementFromPoint(
+          rectangle.left + rectangle.width / 2,
+          rectangle.top + rectangle.height / 2,
+        ));
     })`,
   }),
   Object.freeze({
@@ -76,6 +98,22 @@ const INTERACTION_DELAY_MILLISECONDS = 180;
 const HOVER_MAX_ATTEMPTS = 4;
 const NAVIGATION_POLL_MILLISECONDS = 50;
 const NAVIGATION_TIMEOUT_MILLISECONDS = 2_500;
+export const HIDDEN_BY_PREFERENCE = "hidden-by-preference";
+
+// Paseo 0.13+ stores per-entry sidebar visibility in app settings. Only an
+// explicit `visible: false` counts; a missing entry without it is a regression.
+export function buildSidebarNavHiddenExpression(navigationKey) {
+  return `(() => {
+    try {
+      const settings = JSON.parse(localStorage.getItem('@paseo:app-settings') ?? 'null');
+      const items = settings?.sidebarNavItems;
+      return Array.isArray(items) &&
+        items.some((item) => item?.key === ${JSON.stringify(navigationKey)} && item.visible === false);
+    } catch {
+      return false;
+    }
+  })()`;
+}
 
 function buildClickExpression(elementExpression) {
   return `(() => {
@@ -438,8 +476,65 @@ async function leaveSettings(session, wait) {
   );
 }
 
+async function waitForValue(session, expression, description, wait) {
+  const deadline = Date.now() + NAVIGATION_TIMEOUT_MILLISECONDS;
+  do {
+    const value = await session.evaluate(expression);
+    if (value) return value;
+    await wait(NAVIGATION_POLL_MILLISECONDS);
+  } while (Date.now() < deadline);
+  const value = await session.evaluate(expression);
+  if (value) return value;
+  throw new Error(`Renderer audit timed out waiting for ${description}`);
+}
+
+export async function navigateToUtilityPage(session, page, wait) {
+  const sidebarExpression = `document.querySelector('[data-testid="${page.testIdentifier}"]')`;
+  const isTargetPath = (candidate) => candidate === page.path;
+  if (await session.evaluate(buildClickExpression(sidebarExpression))) {
+    return { entry: "sidebar", path: await waitForPath(session, isTargetPath, wait) };
+  }
+  const hidden = page.navigationKey && page.commandCenter
+    ? await session.evaluate(buildSidebarNavHiddenExpression(page.navigationKey))
+    : false;
+  if (!hidden) {
+    throw new Error(`Renderer audit navigation target was not found: ${sidebarExpression}`);
+  }
+  if (typeof session.insertText !== "function") {
+    throw new Error("Renderer audit session cannot type into the command center");
+  }
+  if (!await session.evaluate(buildClickExpression(`document.querySelector('[data-testid="sidebar-search"]')`))) {
+    throw new Error("Renderer audit could not open the command center");
+  }
+  await waitForValue(
+    session,
+    `(() => {
+      const input = document.querySelector('[data-testid="command-center-input"]');
+      if (!input) return false;
+      input.focus();
+      return true;
+    })()`,
+    "the command center input",
+    wait,
+  );
+  await session.insertText(page.commandCenter.query);
+  const resultExpression = `[...document.querySelectorAll('[data-testid="command-center-results"] [role="button"], [data-testid="command-center-results"] button')].find((element) => ${JSON.stringify(page.commandCenter.labels)}.includes(element.textContent?.trim()))`;
+  await waitForValue(session, `Boolean(${resultExpression})`, `the ${page.label} command`, wait);
+  const path = await clickAndWait(session, resultExpression, isTargetPath, wait);
+  return { entry: "command-center", path };
+}
+
+export { performHoverCheck as performRendererStyleHoverCheck };
+
 async function performHoverCheck(session, hoverPlan, wait) {
   let location = await session.evaluate(buildHoverLocateExpression(hoverPlan.selectorExpression));
+  if (
+    !location &&
+    hoverPlan.navigationKey &&
+    await session.evaluate(buildSidebarNavHiddenExpression(hoverPlan.navigationKey))
+  ) {
+    return { label: hoverPlan.label, skipped: HIDDEN_BY_PREFERENCE };
+  }
   if (!location) {
     return {
       after: null,
@@ -508,18 +603,12 @@ async function restoreOriginalState(session, originalState, wait) {
         wait,
       );
     }
-  } else if (originalPath === "/sessions") {
-    await clickAndWait(
+  } else if (
+    RENDERER_STYLE_AUDIT_PAGE_PLAN.some((page) => page.kind === "utility" && page.path === originalPath)
+  ) {
+    await navigateToUtilityPage(
       session,
-      `document.querySelector('[data-testid="sidebar-sessions"]')`,
-      (candidate) => candidate === originalPath,
-      wait,
-    );
-  } else if (originalPath === "/schedules") {
-    await clickAndWait(
-      session,
-      `document.querySelector('[data-testid="sidebar-schedules"]')`,
-      (candidate) => candidate === originalPath,
+      RENDERER_STYLE_AUDIT_PAGE_PLAN.find((page) => page.kind === "utility" && page.path === originalPath),
       wait,
     );
   } else if (originalPath === "/new" || originalPath === "/") {
@@ -589,7 +678,12 @@ export function buildRendererStyleAuditReport({
     }
   }
 
+  const skippedHoverChecks = [];
   for (const hover of hoverChecks) {
+    if (hover.skipped === HIDDEN_BY_PREFERENCE) {
+      skippedHoverChecks.push({ hover: hover.label, reason: hover.skipped });
+      continue;
+    }
     if (!hover.entered) failures.push({ code: "hover-not-entered", hover: hover.label });
     if (!hover.exited) failures.push({ code: "hover-not-exited", hover: hover.label });
     if (!hover.visible) failures.push({ code: "hover-not-visible", hover: hover.label });
@@ -633,6 +727,7 @@ export function buildRendererStyleAuditReport({
     restoredPath,
     restoredSidebarScrollTop,
     schemaVersion: 1,
+    skippedHoverChecks,
   };
 }
 
@@ -655,7 +750,7 @@ export async function auditRendererStyles({
   const runtimeErrors = [];
   let restoredState = null;
 
-  const capturePage = async (page) => {
+  const capturePage = async (page, details = {}) => {
     if (coldInjectEachPage) {
       const reset = await session.evaluate(buildStageBlackGoldResetSource());
       if (reset?.skinInstalled || reset?.overlayPresent || reset?.stylePresent) {
@@ -669,7 +764,10 @@ export async function auditRendererStyles({
         throw new Error(`Cold injection failed on ${page.label}: ${JSON.stringify(verification)}`);
       }
     }
-    const snapshot = await session.evaluate(buildRendererStylePageSnapshotExpression(page.label));
+    const snapshot = {
+      ...await session.evaluate(buildRendererStylePageSnapshotExpression(page.label)),
+      ...details,
+    };
     pages.push(coldInjectEachPage
       ? { ...snapshot, coldInjectedThemeId: expectedThemeId }
       : snapshot);
@@ -708,6 +806,7 @@ export async function auditRendererStyles({
         const failedHoverPlans = RENDERER_STYLE_AUDIT_HOVER_PLAN.filter((hoverPlan) => {
           if (hoverPlan.label === SETTINGS_HOVER_LABEL) return false;
           const result = hoverChecksByLabel.get(hoverPlan.label);
+          if (result?.skipped === HIDDEN_BY_PREFERENCE) return false;
           return !result?.entered || !result?.exited || !result?.visible;
         });
         for (const hoverPlan of failedHoverPlans) {
@@ -718,13 +817,8 @@ export async function auditRendererStyles({
           );
         }
       } else if (page.kind === "utility") {
-        await clickAndWait(
-          session,
-          `document.querySelector('[data-testid="${page.testIdentifier}"]')`,
-          (candidate) => candidate === `/${page.label === "history" ? "sessions" : "schedules"}`,
-          wait,
-        );
-        await capturePage(page);
+        const { entry } = await navigateToUtilityPage(session, page, wait);
+        await capturePage(page, { navigationEntry: entry });
       }
     }
   } catch (error) {

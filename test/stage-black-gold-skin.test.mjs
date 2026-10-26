@@ -481,6 +481,50 @@ test("native themes retain surfaces, selected text, semantic colors and live CSS
   }
 });
 
+function appendNativeAccentButton(harness) {
+  const root = harness.document.documentElement;
+  // Paseo 0.13 ghostty: white accent-foreground on #89b4fa is 2.11:1.
+  root.computedStyle["--colors-surface0"] = "#282c34";
+  root.computedStyle["--colors-foreground"] = "#fafafa";
+  root.computedStyle["--colors-accent"] = "#89b4fa";
+  root.computedStyle["--colors-accent-foreground"] = "#ffffff";
+  const button = new FakeElement("button");
+  button.computedStyle.backgroundColor = "rgb(137, 180, 250)";
+  button.computedStyle.color = "rgb(255, 255, 255)";
+  button.computedStyle.cursor = "pointer";
+  button.textContent = "更新";
+  root.append(button);
+  return button;
+}
+
+test("native themes still lift unreadable foregrounds on opaque interactive controls", () => {
+  const harness = createRendererHarness();
+  const button = appendNativeAccentButton(harness);
+
+  vm.runInNewContext(buildStageBlackGoldInjectionSource({ theme: createTheme("#f6f6f6") }), harness.context);
+  harness.flush();
+
+  assert.equal(button.style.getPropertyValue("color"), "#000000");
+  assert.equal(button.style.getPropertyValue("background-color"), "");
+});
+
+test("native contrast fixes are dropped when the host theme tokens change", () => {
+  const harness = createRendererHarness();
+  const root = harness.document.documentElement;
+  const button = appendNativeAccentButton(harness);
+  vm.runInNewContext(buildStageBlackGoldInjectionSource({ theme: createTheme("#f6f6f6") }), harness.context);
+  harness.flush();
+  assert.equal(button.style.getPropertyValue("color"), "#000000");
+
+  // The next native theme renders a readable control on its own.
+  root.computedStyle["--colors-accent"] = "#1e3a8a";
+  button.computedStyle.backgroundColor = "rgb(30, 58, 138)";
+  harness.mutate([{ type: "attributes", target: root }]);
+  harness.flush();
+
+  assert.equal(button.style.getPropertyValue("color"), "");
+});
+
 test("early fallback recoloring is removed when native theme tokens mount", () => {
   const harness = createRendererHarness();
   const root = harness.document.documentElement;

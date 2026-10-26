@@ -337,6 +337,9 @@ export async function openPaseoRendererSession(
       }
       return evaluation?.result?.value;
     },
+    insertText(text) {
+      return connection.send("Input.insertText", { text: String(text) });
+    },
     movePointer(x, y) {
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
         throw new Error("Renderer pointer coordinates must be finite numbers");

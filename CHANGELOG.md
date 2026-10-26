@@ -4,6 +4,11 @@
 
 - 为 macOS 与 Windows 的公开网站命令采用固定 checkout 安装持久 Guardian，并提供平台选择；Agent Skill、CLI 导览与主题包说明对齐同一上游入口。Windows WebP 取色使用 `sharp`。合并前的真机与 CI 证据范围见 `COMPATIBILITY.md`。
 
+- **S（背景）**：Paseo 0.13.0 让用户隐藏内置侧栏入口（`sidebarNavItems` 的 `visible: false`），隐藏后 `sidebar-schedules` 不再渲染，巡检找不到入口即中止；ghostty 等原生主题把 `accent-foreground` 设为白色，关于页「更新」按钮白字配 `#89b4fa` 只有 2.11:1，原生模式又跳过了全部前景修正；工作区行被滚到侧栏顶部固定区下方时，巡检仍挑中它，指针落在 History 按钮上。
+- **T（任务）**：入口被用户隐藏时仍巡检该页面而不放宽缺失入口的失败；原生主题保持原配色，只修正读不清的控件文字；hover 只挑真正露出的行。
+- **A（行动）**：巡检仅在 app settings 明确标记隐藏时改经 Command Center 进入 Schedules，并把该入口的 hover 记入 `skippedHoverChecks`（原因 `hidden-by-preference`）；CDP 会话新增 `insertText`。原生模式下，不透明可交互控件的前景对比低于 4.5 时改为黑或白，原生 token 变化时撤销全部内联修正后重扫。工作区行 hover 目标改为对中心点做 `elementFromPoint` 命中测试。注入版本提升到 19。
+- **R（结果）**：Windows Paseo 0.13.0、greenhouse 主题、ghostty 原生主题下 `audit:renderer --cold-inject` 21 类页面、5 类 hover 通过（schedules hover 因用户隐藏入口而列为跳过），`verify --theme` 通过；自动测试 160 项通过。巡检要求 Paseo 窗口可见：最小化或被完全遮挡时 `requestAnimationFrame` 不触发，皮肤修正不会落地。
+
 - **S（背景）**：皮肤清单的浅色配色会覆盖 Paseo 的深色主题，原生选中态与皮肤文字色混用后出现低对比度，切换主题也会残留旧颜色。
 - **T（任务）**：保留背景图片，同时让皮肤跟随 Paseo 所有内置主题、系统明暗模式和插件主题。
 - **A（行动）**：从原生 Unistyles 颜色变量取得动态视觉层配色，停止覆盖原生控件的文字、填充和边框；保留无变量旧宿主的清单回退，并在原生样式晚加载时清除旧覆盖。注入版本提升到 18。

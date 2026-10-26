@@ -6,7 +6,7 @@ export const STAGE_BLACK_GOLD_GLOBAL_KEY = "__PASEO_STAGE_BLACK_GOLD_SKIN__";
 
 const STAGE_BLACK_GOLD_CONFIGURATION = {
   globalKey: STAGE_BLACK_GOLD_GLOBAL_KEY,
-  version: 18,
+  version: 19,
   styleIdentifier: STAGE_BLACK_GOLD_STYLE_ID,
   overlayIdentifier: STAGE_BLACK_GOLD_OVERLAY_ID,
   heroImageDataUrl: null,
@@ -88,6 +88,9 @@ function installStageBlackGoldSkin(configuration) {
   let routePathname = window.location.pathname;
   const originalRouteAttribute = document.documentElement?.getAttribute("data-paseo-skin-route");
   let usesNativeTheme = false;
+  // Contrast fixes are inline values computed from one native theme; a host
+  // theme switch drops them all and rescans against the new tokens.
+  let nativeThemeSignature = null;
   // Unistyles resolves built-in, system and plugin themes into these variables.
   // Keep the references live: a host theme switch must not freeze computed colors.
   const nativeColorTokens = {
@@ -100,6 +103,12 @@ function installStageBlackGoldSkin(configuration) {
     glow: "ring",
     line: "border",
   };
+  const nativeSignatureTokens = [
+    ...Object.values(nativeColorTokens),
+    "accent-foreground",
+    "primary",
+    "primary-foreground",
+  ];
   const palette = Object.fromEntries(Object.entries(nativeColorTokens).map(([key, token]) =>
     [key, `var(--colors-${token}, ${configuration.theme.colors[key]})`],
   ));
@@ -197,7 +206,18 @@ function installStageBlackGoldSkin(configuration) {
     const background = parseColor(rootStyle.getPropertyValue("--colors-surface0").trim());
     const foreground = parseColor(rootStyle.getPropertyValue("--colors-foreground").trim());
     const nextUsesNativeTheme = background?.alpha === 1 && foreground?.alpha === 1;
-    if (nextUsesNativeTheme === usesNativeTheme) return;
+    const nextNativeThemeSignature = nextUsesNativeTheme
+      ? nativeSignatureTokens
+        .map((token) => rootStyle.getPropertyValue(`--colors-${token}`).trim())
+        .join("|")
+      : null;
+    if (
+      nextUsesNativeTheme === usesNativeTheme &&
+      nextNativeThemeSignature === nativeThemeSignature
+    ) {
+      return;
+    }
+    nativeThemeSignature = nextNativeThemeSignature;
     // Early injection can run before the host stylesheet is mounted. Remove any
     // fallback recoloring once native tokens arrive, including on existing nodes.
     restoreInlineStyles();
@@ -347,7 +367,9 @@ function installStageBlackGoldSkin(configuration) {
     }
 
     const foregroundColor = parseColor(computedStyle.color);
-    if (!usesNativeTheme && foregroundColor && foregroundColor.alpha > 0.03) {
+    // Native themes keep their palette, but an unreadable control (Paseo 0.13
+    // ghostty: white on #89b4fa) still gets a black or white foreground.
+    if (foregroundColor && foregroundColor.alpha > 0.03) {
       if (interactiveBackgroundColor?.alpha >= 0.7) {
         if (resolveContrastRatio(interactiveBackgroundColor, foregroundColor) < 4.5) {
           setImportantStyle(
@@ -356,7 +378,7 @@ function installStageBlackGoldSkin(configuration) {
             resolveContrastingForegroundColor(interactiveBackgroundColor),
           );
         }
-      } else if (!isStagePaletteColor(foregroundColor)) {
+      } else if (!usesNativeTheme && !isStagePaletteColor(foregroundColor)) {
         if (isAccentColor(foregroundColor)) {
           setImportantStyle(element, "color", configuration.theme.colors.accent);
         } else if (foregroundColor.saturation < 0.16) {

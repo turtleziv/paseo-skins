@@ -10,6 +10,8 @@ import {
   buildRendererStyleAuditReport,
   buildRendererStylePageSnapshotExpression,
   isVisibleThemedHover,
+  navigateToUtilityPage,
+  performRendererStyleHoverCheck,
   RENDERER_STYLE_AUDIT_HOVER_PLAN,
   RENDERER_STYLE_AUDIT_PAGE_PLAN,
 } from "../src/renderer-style-audit.mjs";
@@ -151,6 +153,134 @@ test("renderer audit finds the Appearance hover target in English and Chinese", 
     });
     assert.equal(selected, button, `Could not find ${textContent}`);
   }
+});
+
+test("renderer audit hovers a workspace row that is not covered by the sidebar header", () => {
+  const selector = RENDERER_STYLE_AUDIT_HOVER_PLAN.find(
+    ({ label }) => label === "sidebar:workspace-row",
+  ).selectorExpression;
+  const header = { id: "sidebar-sessions" };
+  const createRow = (top) => {
+    const row = {
+      contains: (node) => node === row,
+      getAttribute: () => "false",
+      getBoundingClientRect: () => ({ bottom: top + 36, height: 36, left: 8, top, width: 302 }),
+    };
+    return row;
+  };
+  // Scrolled under the sticky header: inside the viewport, but its centre hits History.
+  const covered = createRow(29);
+  const exposed = createRow(240);
+
+  const selected = vm.runInNewContext(selector, {
+    document: {
+      elementFromPoint: (x, y) => (y < 120 ? header : exposed),
+      querySelectorAll: () => [covered, exposed],
+    },
+    innerHeight: 900,
+  });
+
+  assert.equal(selected, exposed);
+});
+
+// Paseo 0.13 lets the user hide built-in sidebar entries; the page stays routable.
+function createHiddenSchedulesRenderer({ hiddenKeys = ["schedules"] } = {}) {
+  const state = { commandCenterOpen: false, focused: false, path: "/h/server/workspace/one", typed: "" };
+  const settings = {
+    sidebarNavItems: ["new-workspace", "history", "search", "schedules"].map((key) => ({
+      key,
+      visible: !hiddenKeys.includes(key),
+    })),
+  };
+  const document = {
+    querySelector(selector) {
+      if (selector.includes("sidebar-search")) {
+        return { click: () => { state.commandCenterOpen = true; } };
+      }
+      if (selector.includes("command-center-input")) {
+        return state.commandCenterOpen ? { focus: () => { state.focused = true; } } : null;
+      }
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (!selector.includes("command-center-results") || state.typed !== "schedules") return [];
+      return [
+        { textContent: "操作" },
+        { textContent: "计划", click: () => { state.path = "/schedules"; state.commandCenterOpen = false; } },
+      ];
+    },
+  };
+  const context = {
+    document,
+    localStorage: { getItem: (key) => (key === "@paseo:app-settings" ? JSON.stringify(settings) : null) },
+    window: { get location() { return { pathname: state.path }; } },
+  };
+  const session = {
+    close: () => {},
+    evaluate: async (expression) => vm.runInNewContext(expression, context),
+    insertText: async (text) => { if (state.focused) state.typed = text; },
+    movePointer: async () => {},
+  };
+  return { session, state };
+}
+
+const schedulesPage = () => RENDERER_STYLE_AUDIT_PAGE_PLAN.find(({ label }) => label === "schedules");
+
+test("renderer audit reaches a sidebar entry the user hid through the command center", async () => {
+  const { session, state } = createHiddenSchedulesRenderer();
+
+  const result = await navigateToUtilityPage(session, schedulesPage(), async () => {});
+
+  assert.deepEqual(result, { entry: "command-center", path: "/schedules" });
+  assert.equal(state.typed, "schedules");
+});
+
+test("renderer audit still fails when a sidebar entry vanished without a hidden preference", async () => {
+  const { session, state } = createHiddenSchedulesRenderer({ hiddenKeys: [] });
+
+  await assert.rejects(
+    navigateToUtilityPage(session, schedulesPage(), async () => {}),
+    /navigation target was not found/,
+  );
+  assert.equal(state.commandCenterOpen, false);
+});
+
+test("renderer hover check skips only a sidebar entry the user hid", async () => {
+  const hoverPlan = RENDERER_STYLE_AUDIT_HOVER_PLAN.find(({ label }) => label === "sidebar:schedules");
+
+  const hidden = await performRendererStyleHoverCheck(
+    createHiddenSchedulesRenderer().session, hoverPlan, async () => {},
+  );
+  const vanished = await performRendererStyleHoverCheck(
+    createHiddenSchedulesRenderer({ hiddenKeys: [] }).session, hoverPlan, async () => {},
+  );
+
+  assert.equal(hidden.skipped, "hidden-by-preference");
+  assert.equal(vanished.skipped, undefined);
+  assert.equal(vanished.entered, false);
+});
+
+test("renderer style audit report lists hidden-entry hovers without failing them", () => {
+  const hoverChecks = createCleanHoverChecks();
+  const index = hoverChecks.findIndex(({ label }) => label === "sidebar:schedules");
+  const skipped = { ...hoverChecks[index], entered: false, exited: false, visible: false };
+  const reportFor = (reason) => buildRendererStyleAuditReport({
+    hoverChecks: hoverChecks.map((check, position) =>
+      position === index ? { ...skipped, skipped: reason } : check),
+    originalPath: "/new",
+    pages: createCleanPages(),
+    restoredPath: "/new",
+  });
+
+  const hidden = reportFor("hidden-by-preference");
+  const other = reportFor("anything-else");
+
+  assert.equal(hidden.pass, true);
+  assert.deepEqual(hidden.skippedHoverChecks, [
+    { hover: "sidebar:schedules", reason: "hidden-by-preference" },
+  ]);
+  assert.equal(other.pass, false);
+  assert.ok(other.failures.some(({ code }) => code === "hover-not-entered"));
 });
 
 test("renderer page snapshot expression is self-contained renderer JavaScript", () => {
