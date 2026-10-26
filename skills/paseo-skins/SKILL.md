@@ -7,7 +7,7 @@ description: Safely browse, create, inspect, install, switch, verify, and remove
 
 Use the public theme catalog and the zero-patch CDP loader. Preserve the Paseo executable, `app.asar`, daemon, and agent data.
 
-Choose the host workflow first. The PowerShell workflow has live evidence on Windows x64 with Paseo 0.10.3; the Bash workflow has live evidence on macOS arm64 with older Paseo versions. Read [compatibility evidence](https://github.com/turtleziv/paseo-skins/blob/windows-support/COMPATIBILITY.md) before claiming another host or version is verified.
+Choose the host workflow first. The PowerShell workflow has live evidence on Windows x64 with Paseo 0.10.3 and 0.13.0 (0.13.0 scope is listed in compatibility evidence); the Bash workflow has live evidence on macOS arm64 with older Paseo versions. Read [compatibility evidence](https://github.com/turtleziv/paseo-skins/blob/windows-support/COMPATIBILITY.md) before claiming another host or version is verified.
 
 Windows support exists only on the `windows-support` branch of the `turtleziv/paseo-skins` fork; the upstream repository and the fork's `main` contain no Windows code. Use the fork for every Windows command and the upstream repository for macOS.
 

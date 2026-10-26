@@ -89,7 +89,7 @@ macOS Terminal：`npx skills add huangguang1999/paseo-skins --skill paseo-skins 
 
 - macOS 与 `/Applications/Paseo.app`，或 Windows x64 与当前用户安装的 `Paseo.exe`
 - Node.js 22 或更高版本；持久安装的首次 checkout 另需 Git
-- 真机相容性范围见 [`COMPATIBILITY.md`](COMPATIBILITY.md)；Windows Paseo 0.10.3 已有实测，较新版本、Linux 与 Intel Mac 未获同等实机验证
+- 真机相容性范围见 [`COMPATIBILITY.md`](COMPATIBILITY.md)；Windows Paseo 0.10.3 已有完整实测，0.13.0 已实测 `doctor`／`status`／`verify`／`reset`、renderer audit 与 Guardian 重启换版；其他版本、Linux 与 Intel Mac 未获同等实机验证
 
 ## 快速开始
 
@@ -176,7 +176,7 @@ npm run autostart:uninstall
 
 自启代理不会 patch 或重启 Paseo，也不会重启 daemon；它只在登录时注入环境变量并守护皮肤 watcher。生成的文件位于 `~/Library/LaunchAgents/com.paseo-skins.*.plist` 和 `~/.paseo-skin-loader/guardian.mjs`。
 
-## Windows（已实测 Paseo 0.10.3）
+## Windows（已实测 Paseo 0.10.3、0.13.0）
 
 Windows 支持只存在于本 fork 的 `windows-support` 分支，实机证据详见 `COMPATIBILITY.md`；上游仓库与 fork 的 `main` 都不含 Windows 代码，下列命令因此指定该分支。一次性查看 CLI 或用已公开的图片生成主题，可以在 PowerShell 中运行：
 
